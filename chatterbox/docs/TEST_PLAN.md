@@ -58,13 +58,14 @@ This test plan defines how ChatterBox will be validated across backend APIs, rea
 
 | ID | Category | Description | Input | Expected Output | Status |
 | --- | --- | --- | --- | --- | --- |
-| AUTH-001 | API | Register with valid input. | username, email, strong password | `201`, JWT, sanitized user | Planned Sprint 2 |
-| AUTH-002 | API | Register with duplicate email. | existing email | `409` conflict response | Planned Sprint 2 |
+| AUTH-001 | API | Register with valid input. | username, email, strong password | `201`, JWT, sanitized user | Passed Sprint 2 |
+| AUTH-002 | API | Register with duplicate email. | existing email | `409` conflict response | Passed Sprint 2 |
 | AUTH-003 | API | Register with invalid email. | malformed email | `400` validation response | Planned Sprint 5 |
-| AUTH-004 | API | Login with valid credentials. | email and password | `200`, JWT, user | Planned Sprint 2 |
-| AUTH-005 | API | Login with wrong password. | email and invalid password | `401` safe auth error | Planned Sprint 2 |
-| AUTH-006 | API | Access protected route without token. | no auth header | `401` response | Planned Sprint 2 |
+| AUTH-004 | API | Login with valid credentials. | email and password | `200`, JWT, user | Passed Sprint 2 |
+| AUTH-005 | API | Login with wrong password. | email and invalid password | `401` safe auth error | Passed Sprint 2 |
+| AUTH-006 | API | Access protected route without token. | no auth header | `401` response | Passed Sprint 2 |
 | AUTH-007 | API | Access protected route with malformed token. | invalid token | `401` response | Planned Sprint 5 |
+| AUTH-008 | API | Logout blacklists token. | valid JWT | token rejected on later protected request | Passed Sprint 2 |
 | ROOM-001 | API | Create public room. | name and type | `201`, room payload | Planned Sprint 3 |
 | ROOM-002 | API | Get visible rooms. | authenticated request | list of accessible rooms | Planned Sprint 3 |
 | ROOM-003 | API | Add member to private room. | room ID and user ID | updated member list | Planned Sprint 3 |

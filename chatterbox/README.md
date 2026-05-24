@@ -6,7 +6,7 @@ ChatterBox is a production-oriented real-time chat application built for Shriya 
 
 ## Current Sprint Status
 
-Sprint 1 establishes the project foundation: repository structure, dependency manifests, Docker service topology, environment templates, and core engineering documentation. Backend and frontend runtime code begins in later sprints, so this sprint is intentionally focused on design and setup.
+Sprint 2 completes the backend core: MongoDB and Redis configuration, Mongoose models, JWT authentication, auth/user REST routes, Express app startup, graceful shutdown, and Supertest coverage for the auth workflow. Real-time Socket.io messaging begins in Sprint 3.
 
 ## Core Features
 
@@ -78,7 +78,14 @@ cp .env.example .env
 cp server/.env.example server/.env
 ```
 
-For Sprint 1, dependency installation and documentation are the verified deliverables. Runtime startup begins when the backend server is implemented in Sprint 2.
+Run backend tests:
+
+```bash
+cd server
+npm test
+```
+
+Runtime startup requires MongoDB and Redis. The backend server entry point is now implemented and listens on port `5000`.
 
 ## Docker Services
 
