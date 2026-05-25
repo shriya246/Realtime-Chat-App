@@ -1,158 +1,172 @@
-<!-- Purpose: System architecture document for ChatterBox. -->
+<!-- Purpose: Final system architecture, data flow, security, caching, and deployment design for ChatterBox. -->
 
 # System Architecture
 
 ## 1. Overview
 
-ChatterBox uses a split frontend/backend architecture. The React client handles authentication views and the chat interface. The Node.js backend exposes REST APIs for resource management and Socket.io events for real-time communication. MongoDB stores durable records, Redis accelerates presence and recent history lookups, and Azure Service Bus receives message delivery events for asynchronous reliability.
+ChatterBox is a container-ready real-time chat system. A React single-page application is built by Vite and served by Nginx. Its REST and Socket.io traffic reaches a Node.js/Express server that owns authentication, authorization, room behavior, message persistence, live fan-out, caching, and queue publication. MongoDB is durable truth; Redis stores transient fast-access state; Azure Service Bus accepts downstream delivery events.
 
-## 2. High-Level Component Diagram
+## 2. Component Diagram
 
 ```text
-                       +-----------------------------+
-                       |        React Client         |
-                       |  Vite, TailwindCSS, Axios   |
-                       +--------------+--------------+
-                                      |
-                         REST / JSON  |  Socket.io
-                                      |
-                       +--------------v--------------+
-                       |       Node.js Backend       |
-                       | Express API + Socket.io     |
-                       +------+-----------+----------+
-                              |           |
-              Mongoose ODM    |           | ioredis
-                              |           |
-                      +-------v--+     +--v--------+
-                      | MongoDB  |     | Redis     |
-                      | Durable  |     | Cache and |
-                      | storage  |     | presence  |
-                      +----------+     +-----------+
-                              |
-                              | delivery events
-                              v
-                      +-------------------+
-                      | Azure Service Bus |
-                      | Queue pipeline    |
-                      +-------------------+
+                         Browser
+                            |
+                            | HTTP / WebSocket
+                            v
+                    +-------+--------+
+                    | Nginx Client   |
+                    | React SPA      |
+                    +-------+--------+
+                            |
+                    REST + Socket.io/JWT
+                            |
+                    +-------v--------+
+                    | Node.js Server |
+                    | Express/Socket |
+                    +---+------+-----+
+                        |      | \
+               Mongoose |      |  \ delivery events
+                        |      |   \
+                   +----v--+ +-v-----+ +-------------------+
+                   |MongoDB| | Redis | | Azure Service Bus |
+                   +-------+ +-------+ +-------------------+
 ```
 
-## 3. Component Responsibilities
+## 3. Responsibilities
 
 | Component | Responsibility |
 | --- | --- |
-| React client | Presents login, registration, room list, chat window, typing indicators, and presence states. |
-| Express API | Handles authentication, user search, room management, message history, validation, and error formatting. |
-| Socket.io server | Authenticates socket connections, joins/leaves rooms, emits messages, and broadcasts presence events. |
-| MongoDB | Stores users, rooms, and messages as the source of truth. |
-| Redis | Stores token blacklist entries, online user presence, and cached recent room messages. |
-| Azure Service Bus | Receives message delivery events for future replay, audit, worker processing, and reliability workflows. |
+| Nginx client container | Serves optimized static files, immutable asset caching, health route, and SPA route fallback. |
+| React client | Manages authentication UI, rooms, messages, presence, typing, reconnect state, and queued outgoing messages. |
+| Express API | Validates REST requests and handles authentication, users, rooms, history pagination, health, and consistent errors. |
+| Socket.io engine | Authenticates handshakes, joins rooms, broadcasts messages/presence/typing, and responds with recent history. |
+| MongoDB/Mongoose | Persists users, rooms, and messages with indexes and schema validation. |
+| Redis/ioredis | Caches recent messages, tracks online users, and blacklists revoked JWTs. |
+| Azure Service Bus | Receives asynchronous delivery events after a message is accepted and persisted. |
 
-## 4. Technology Choices
+## 4. Technology Decisions
 
-| Technology | Reason |
+| Technology | Decision rationale |
 | --- | --- |
-| React with Vite | Fast local development, strong ecosystem, and excellent portfolio visibility. |
-| TailwindCSS | Utility-first styling that supports responsive polished interfaces without large custom CSS files. |
-| Express | Stable Node.js API framework with straightforward middleware composition. |
-| Socket.io | Reliable WebSocket abstraction with rooms, reconnection support, and event-driven semantics. |
-| MongoDB and Mongoose | Flexible document model suited to users, rooms, and chat messages with schema validation and indexes. |
-| Redis | Low-latency cache for presence, token blacklist, and recent message history. |
-| Azure Service Bus | Managed queue for durable asynchronous delivery events and production cloud architecture discussion. |
-| Docker Compose | Repeatable local infrastructure for MongoDB, Redis, and the API server. |
+| React and Vite | Responsive component architecture with fast local workflow and optimized production builds. |
+| TailwindCSS | Consistent compact chat workspace styling across desktop and mobile layouts. |
+| Express | Mature middleware model for validation, security headers, logging, and REST resources. |
+| Socket.io | Authenticated rooms, acknowledgement callbacks, reconnection support, and browser compatibility. |
+| MongoDB and Mongoose | Natural document relationships for chat data with compound message history indexes. |
+| Redis | Low-latency expiring state for presence, recent history, and revoked access tokens. |
+| Azure Service Bus | Managed durable event boundary for notification, replay, auditing, or analytics workers. |
+| Docker Compose and Nginx | Reproducible topology and efficient production SPA delivery. |
 
-## 5. Authentication Flow
+## 5. Authentication and Authorization
 
-1. A guest submits registration or login credentials through the React client.
-2. Express validates input and checks uniqueness or credential correctness.
-3. Passwords are hashed with bcrypt on registration.
-4. The backend signs a JWT using `JWT_SECRET`.
-5. The frontend stores the token in localStorage and attaches it to API requests.
-6. Protected REST routes verify the JWT and check Redis to ensure the token has not been blacklisted.
-7. Socket.io connections pass the JWT in the handshake and are rejected if verification fails.
+1. Registration validates username, email, and password input.
+2. Mongoose hashes the password with bcrypt before storing the user.
+3. Login compares bcrypt hashes and signs a JWT from `JWT_SECRET`.
+4. The React session stores the token and sanitized user; Axios sends the bearer token.
+5. REST middleware verifies the token, rejects Redis-blacklisted tokens, and attaches the user.
+6. Socket.io accepts the token through the handshake, applies equivalent checks, and attaches the authenticated user to the socket.
+7. Logout stores a Redis blacklist key until the token's remaining expiration.
 
-## 6. Real-Time Message Flow
+Private rooms enforce member access for REST history and socket joins/messages. Public rooms remain visible and joinable to authenticated users.
 
-1. A user joins a room through `join_room`.
-2. The server validates room membership.
-3. The socket joins the Socket.io room.
-4. The server loads recent messages from Redis using `messages:<roomId>`.
-5. If Redis misses, the server queries MongoDB, returns the latest 50 messages, and warms the Redis cache.
-6. A user emits `send_message` with room ID and content.
-7. The server validates content and membership.
-8. The message is saved to MongoDB.
-9. The message is cached in Redis and the list is trimmed to the latest 50 items.
-10. The message is emitted to all sockets in that room through `receive_message`.
-11. A delivery event is published to Azure Service Bus.
-
-## 7. Redis Caching Strategy
-
-| Key pattern | Data | TTL | Purpose |
-| --- | --- | --- | --- |
-| `online:<userId>` | ISO timestamp or socket metadata | 3600 seconds refreshed on activity | Tracks online presence. |
-| `messages:<roomId>` | Redis list of serialized messages | 86400 seconds | Fast retrieval of recent room history. |
-| `blacklist:<tokenId>` or `blacklist:<token>` | Token marker | Remaining JWT lifetime | Prevents reuse of logged-out tokens. |
-| `typing:<roomId>:<userId>` | Temporary typing marker | 3 seconds | Supports auto-clearing typing indicators. |
-
-Redis is not the source of truth. If Redis is empty or unavailable, MongoDB is used for durable message reads.
-
-## 8. Azure Service Bus Role
-
-Azure Service Bus is used after a message is accepted and persisted. The queue receives a delivery event containing message ID, room ID, sender ID, timestamp, and status. This enables future production patterns such as:
-
-- delivery replay after transient failures
-- analytics or audit consumers
-- notification workers
-- dead-letter handling for failed downstream operations
-
-The chat path remains responsive because queue publication is handled as a controlled service call with error handling.
-
-## 9. Data Flow by Feature
-
-| Feature | Client | Backend | Data stores |
-| --- | --- | --- | --- |
-| Register | POST credentials | Validate, hash, create user, sign JWT | MongoDB user |
-| Login | POST credentials | Validate password, sign JWT | MongoDB user, Redis blacklist check |
-| Logout | POST token | Add token to blacklist | Redis blacklist key |
-| Create room | POST room details | Validate name/type, create room | MongoDB room |
-| Join room | Socket event | Validate membership, join socket room | MongoDB room, Redis message cache |
-| Send message | Socket event | Validate, save, emit, queue | MongoDB message, Redis message list, Azure Service Bus |
-| Presence | Socket connect/disconnect | Set/delete online key, broadcast | Redis online key |
-
-## 10. Security Architecture
-
-- JWTs are signed with environment-provided secrets.
-- bcrypt stores only password hashes.
-- Protected REST and Socket.io paths share token verification rules.
-- Auth endpoints are rate limited.
-- CORS is restricted by environment configuration.
-- Helmet and compression are added during production hardening.
-- Sensitive values are documented in `.env.example` but real secrets are never committed.
-
-## 11. Scalability Considerations
-
-The first portfolio version runs as a single backend instance. The architecture deliberately separates durable state and cache state so the application can later scale horizontally with:
-
-- Redis-backed Socket.io adapter for cross-instance room events
-- MongoDB Atlas replica set for managed durability
-- Redis Cloud for managed cache and presence storage
-- Azure Service Bus consumers for independent background processing
-- Load balancer routing to multiple Node.js containers
-
-## 12. Failure Handling
-
-| Failure | Expected behavior |
-| --- | --- |
-| Invalid JWT | REST returns `401`; Socket.io rejects connection. |
-| Redis unavailable | Application logs service error and falls back to MongoDB where possible. |
-| MongoDB unavailable | API returns controlled `503` or `500` response depending on failure type. |
-| Azure Service Bus unavailable | Message remains saved and emitted; queue failure is logged without crashing the server. |
-| Client disconnect | Socket.io disconnect handler clears presence and emits `user_offline`. |
-
-## 13. Final Deployment Shape
-
-Sprint 6 will extend this architecture with an Nginx-served client container, production Docker Compose overrides, health checks, security middleware, and CI validation. The core deployment path remains:
+## 6. Message Delivery Flow
 
 ```text
-Browser -> Client container -> API container -> MongoDB / Redis / Azure Service Bus
+Client send_message
+  -> validate authenticated socket, room access, and content
+  -> persist Message in MongoDB
+  -> LPUSH serialized message into Redis messages:<roomId>
+  -> LTRIM bounded recent history and apply expiry
+  -> emit receive_message to active room sockets
+  -> publish delivery event to Azure Service Bus
 ```
+
+Queue publication occurs after persistence. A Service Bus error does not roll back or hide a message already delivered live; it produces a controlled server error log and a failed publication outcome for monitoring.
+
+## 7. History and Redis Strategy
+
+| Redis key | Value | Expiration | Use |
+| --- | --- | --- | --- |
+| `messages:<roomId>` | Newest-first JSON message list | `MESSAGE_CACHE_TTL_SECONDS`, default 86400 seconds | Fast latest-history response on room join |
+| `online:<userId>` | Presence JSON payload | `ONLINE_USER_TTL_SECONDS`, default 3600 seconds | Current online list and stale presence cleanup |
+| `blacklist:<token>` | Revocation marker | Remaining JWT lifetime | Immediate logout invalidation |
+
+When `join_room` is received, the server reads up to `MESSAGE_HISTORY_LIMIT` messages from Redis. A miss queries MongoDB and warms the bounded Redis list. When private-room membership changes, cached history is invalidated so access changes are reflected through an authoritative reload.
+
+`GET /api/rooms/:id/messages` provides longer history with an `_id` cursor. The indexed MongoDB query avoids page-offset scans and returns messages chronologically for rendering.
+
+## 8. Presence, Typing, and Resilience
+
+- On connection, an authenticated user is stored online in Redis and broadcast through `user_online`.
+- Multiple sockets for one user share an internal Socket.io room; the user goes offline only after the final socket disconnects.
+- Typing indicators are transient socket broadcasts with a three-second auto-clear timer.
+- The client reconnects with exponential backoff after transport loss.
+- The client queues up to 100 messages in memory while disconnected, marks them queued in the interface, and replays after successful reconnect and room rejoin.
+
+The outgoing queue intentionally is not persisted in browser storage, avoiding storage of unsent message content across sessions.
+
+## 9. Centralized Configuration and Security
+
+`server/src/config/index.js` owns parsing and validation of runtime configuration. Production startup fails early when `JWT_SECRET`, `MONGO_URI`, `CORS_ALLOWED_ORIGINS`, or `AZURE_SERVICE_BUS_CONNECTION_STRING` is absent.
+
+| Control | Implementation |
+| --- | --- |
+| Credential storage | Passwords hashed with bcrypt; JWT secret supplied only by environment/secret manager. |
+| Input safety | express-validator routes plus Mongoose schema constraints. |
+| HTTP protection | Helmet security headers, body-size limit, response compression, and CORS allowlist. |
+| Brute-force protection | Rate limiter on auth routes. |
+| Request visibility | Morgan method/status/latency logging without credential logging. |
+| Container privilege | API image runs under a dedicated non-root user. |
+| Browser delivery | Nginx static delivery with asset cache policy and SPA fallback. |
+
+## 10. Frontend Modules
+
+```text
+App
+|-- AuthProvider
+|   |-- LoginPage
+|   |-- RegisterPage
+|   `-- protected ChatPage
+`-- SocketProvider
+    `-- ChatPage
+        |-- Sidebar (rooms, presence, create room)
+        `-- ChatWindow (history, send, typing, delivery state)
+```
+
+| Module | Role |
+| --- | --- |
+| `AuthContext` | Restores, creates, and destroys authenticated sessions. |
+| `SocketContext` | Owns authenticated real-time connection and reconnection state. |
+| `useMessages` | Room lifecycle, history/events, typing, optimistic sends, and queued replay. |
+| `useOnlineUsers` | Reduces online/offline events into visible presence state. |
+| `api.js` | Sets API URL, attaches JWT headers, and clears invalid sessions on `401`. |
+
+## 11. Deployment Architecture
+
+```text
+Docker Compose
+|-- client: Nginx serving Vite bundle on host port 3000
+|       `-- starts after healthy server
+|-- server: non-root Node.js runtime on host port 5000
+|       |-- waits for healthy MongoDB and Redis
+|       `-- publishes to external Azure Service Bus
+|-- mongo: MongoDB 7 with persistent volume
+`-- redis: Redis 7 with append-only persistent volume
+```
+
+The production Compose override requires service secrets, sets reverse-proxy awareness, and establishes container resource budgets. In managed hosting, the two application images can be deployed independently while MongoDB Atlas, Redis Cloud, and Azure Service Bus provide managed state.
+
+## 12. Health and Failure Behavior
+
+| Failure | Behavior |
+| --- | --- |
+| Invalid/expired/revoked JWT | REST returns `401`; socket handshake is rejected. |
+| Unauthorized private-room operation | REST or socket response reports authorization failure. |
+| MongoDB or Redis not ready | `/api/health` responds `503` with `status: "degraded"`. |
+| Redis operation fails during workflow | The operation fails in a controlled path; durable MongoDB records are not silently rewritten. |
+| Azure Service Bus publish fails | Saved/live message remains accepted; publication failure is reported for monitoring. |
+| Socket transport disconnects | Presence cleanup executes and active clients may reconnect/replay queued in-session sends. |
+
+## 13. Scaling Path
+
+The portfolio delivery runs one Node.js instance. Horizontal production scaling would add the Socket.io Redis adapter for cross-instance broadcasts, multiple API replicas behind a load balancer, managed MongoDB/Redis resiliency policies, Service Bus consumers with dead-letter monitoring, and metrics/tracing for queue and socket behavior.

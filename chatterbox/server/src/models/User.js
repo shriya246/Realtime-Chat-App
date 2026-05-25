@@ -5,7 +5,7 @@
 const bcrypt = require('bcrypt');
 const mongoose = require('mongoose');
 
-const DEFAULT_SALT_ROUNDS = 12;
+const { getConfig } = require('../config');
 
 const userSchema = new mongoose.Schema(
   {
@@ -69,7 +69,7 @@ userSchema.pre('save', async function hashPassword(next) {
       return next();
     }
 
-    const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS || DEFAULT_SALT_ROUNDS);
+    const { bcryptSaltRounds: saltRounds } = getConfig().security;
     this.passwordHash = await bcrypt.hash(this.passwordHash, saltRounds);
     return next();
   } catch (error) {

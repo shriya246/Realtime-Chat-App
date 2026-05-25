@@ -25,6 +25,72 @@ class AppError extends Error {
 }
 
 /**
+ * Request validation failure carrying field-level detail.
+ */
+class ValidationError extends AppError {
+  /**
+   * @param {string} message - Human-readable error message.
+   * @param {Array<object>|object|null} details - Validation details.
+   */
+  constructor(message = 'Request validation failed.', details = null) {
+    super(message, 400, 'VALIDATION_ERROR', details);
+    this.name = 'ValidationError';
+  }
+}
+
+/**
+ * Invalid or missing authentication credential failure.
+ */
+class AuthError extends AppError {
+  /**
+   * @param {string} message - Human-readable error message.
+   */
+  constructor(message = 'Authentication required.') {
+    super(message, 401, 'AUTHENTICATION_ERROR');
+    this.name = 'AuthError';
+  }
+}
+
+/**
+ * Authenticated user authorization failure.
+ */
+class ForbiddenError extends AppError {
+  /**
+   * @param {string} message - Human-readable error message.
+   */
+  constructor(message = 'You are not authorized to perform this action.') {
+    super(message, 403, 'AUTHORIZATION_ERROR');
+    this.name = 'ForbiddenError';
+  }
+}
+
+/**
+ * Missing resource failure.
+ */
+class NotFoundError extends AppError {
+  /**
+   * @param {string} message - Human-readable error message.
+   */
+  constructor(message = 'Resource not found.') {
+    super(message, 404, 'NOT_FOUND');
+    this.name = 'NotFoundError';
+  }
+}
+
+/**
+ * Resource uniqueness or state-conflict failure.
+ */
+class ConflictError extends AppError {
+  /**
+   * @param {string} message - Human-readable error message.
+   */
+  constructor(message = 'Resource already exists.') {
+    super(message, 409, 'CONFLICT');
+    this.name = 'ConflictError';
+  }
+}
+
+/**
  * Creates a validation error.
  *
  * @param {string} message - Error message.
@@ -32,7 +98,7 @@ class AppError extends Error {
  * @returns {AppError} Configured validation error.
  */
 const validationError = (message = 'Request validation failed.', details = null) =>
-  new AppError(message, 400, 'VALIDATION_ERROR', details);
+  new ValidationError(message, details);
 
 /**
  * Creates an authentication error.
@@ -41,7 +107,7 @@ const validationError = (message = 'Request validation failed.', details = null)
  * @returns {AppError} Configured authentication error.
  */
 const authError = (message = 'Authentication required.') =>
-  new AppError(message, 401, 'AUTHENTICATION_ERROR');
+  new AuthError(message);
 
 /**
  * Creates an authorization error.
@@ -50,7 +116,7 @@ const authError = (message = 'Authentication required.') =>
  * @returns {AppError} Configured authorization error.
  */
 const forbiddenError = (message = 'You are not authorized to perform this action.') =>
-  new AppError(message, 403, 'AUTHORIZATION_ERROR');
+  new ForbiddenError(message);
 
 /**
  * Creates a not-found error.
@@ -59,7 +125,7 @@ const forbiddenError = (message = 'You are not authorized to perform this action
  * @returns {AppError} Configured not-found error.
  */
 const notFoundError = (message = 'Resource not found.') =>
-  new AppError(message, 404, 'NOT_FOUND');
+  new NotFoundError(message);
 
 /**
  * Creates a conflict error.
@@ -68,10 +134,15 @@ const notFoundError = (message = 'Resource not found.') =>
  * @returns {AppError} Configured conflict error.
  */
 const conflictError = (message = 'Resource already exists.') =>
-  new AppError(message, 409, 'CONFLICT');
+  new ConflictError(message);
 
 module.exports = {
   AppError,
+  AuthError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
   authError,
   conflictError,
   forbiddenError,

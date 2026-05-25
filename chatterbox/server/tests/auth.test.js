@@ -11,6 +11,7 @@ process.env.AUTH_RATE_LIMIT_MAX = '1000';
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 
 const app = require('../src/app');
 const { closeRedis } = require('../src/config/redis');
@@ -101,6 +102,39 @@ describe('Auth API', () => {
     expect(response.body.error.code).toBe('CONFLICT');
   });
 
+  test('rejects duplicate registration by username', async () => {
+    await registerUser();
+
+    const response = await registerUser({
+      email: 'second@example.com'
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe('CONFLICT');
+  });
+
+  test('rejects registration with missing fields, invalid email, and short password', async () => {
+    const missingResponse = await request(app).post('/api/auth/register').send({});
+    const invalidResponse = await request(app).post('/api/auth/register').send({
+      username: 'valid_user',
+      email: 'not-an-email',
+      password: 'short'
+    });
+
+    expect(missingResponse.status).toBe(400);
+    expect(missingResponse.body.error.code).toBe('VALIDATION_ERROR');
+    expect(missingResponse.body.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'email' })])
+    );
+    expect(invalidResponse.status).toBe(400);
+    expect(invalidResponse.body.error.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: 'email' }),
+        expect.objectContaining({ field: 'password' })
+      ])
+    );
+  });
+
   test('logs in with valid credentials', async () => {
     await registerUser();
 
@@ -152,6 +186,28 @@ describe('Auth API', () => {
     expect(response.status).toBe(401);
     expect(response.body.success).toBe(false);
     expect(response.body.error.code).toBe('AUTHENTICATION_ERROR');
+  });
+
+  test('rejects protected route with malformed and expired tokens', async () => {
+    const registerResponse = await registerUser();
+    const userId = registerResponse.body.data.user.id;
+    const expiredToken = jwt.sign(
+      { sub: userId, username: 'shriya', email: 'shriya@example.com' },
+      process.env.JWT_SECRET,
+      { expiresIn: -1 }
+    );
+
+    const malformedResponse = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', 'Bearer not-a-token');
+    const expiredResponse = await request(app)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${expiredToken}`);
+
+    expect(malformedResponse.status).toBe(401);
+    expect(malformedResponse.body.error.message).toBe('Authentication token is invalid.');
+    expect(expiredResponse.status).toBe(401);
+    expect(expiredResponse.body.error.message).toBe('Authentication token has expired.');
   });
 
   test('blacklists token on logout and rejects reuse', async () => {

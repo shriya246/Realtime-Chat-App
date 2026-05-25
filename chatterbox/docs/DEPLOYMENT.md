@@ -1,157 +1,197 @@
-<!-- Purpose: Deployment and setup guide for ChatterBox. -->
+<!-- Purpose: Complete deployment, environment, health-check, and troubleshooting guide for ChatterBox. -->
 
 # Deployment and Setup Guide
 
-## 1. Overview
+## 1. Deployment Model
 
-This guide explains how ChatterBox is intended to run locally and in production-style environments. Sprint 1 provides the service layout and environment contracts. Sprint 6 will finalize production Docker images, Nginx configuration, CI, security middleware, and the final deployment checklist.
+ChatterBox ships with a production-shaped local topology:
 
-## 2. Local Development Prerequisites
+```text
+Browser -> Nginx/React client -> Express + Socket.io server
+                                      |       |       |
+                                   MongoDB  Redis  Azure Service Bus
+```
 
-- Node.js 20 or later
-- npm 10 or later
-- Docker Desktop with Docker Compose
-- MongoDB Compass or mongosh for optional database inspection
-- Redis CLI for optional cache inspection
-- Azure subscription for Service Bus integration testing
+The base Compose file starts the client, server, MongoDB, and Redis. Azure Service Bus is a managed external service: it is optional for local development and required when `NODE_ENV=production`.
 
-## 3. Environment Setup
+## 2. Prerequisites
 
-Create local environment files from the examples:
+| Workflow | Requirements |
+| --- | --- |
+| Docker quickstart | Docker Desktop and Docker Compose |
+| Native development | Node.js `^20.19.0` or `>=22.12.0`, npm `>=10`, MongoDB, Redis |
+| Production deployment | Secure secret storage, accessible MongoDB and Redis, Azure Service Bus queue, TLS/reverse proxy |
+
+## 3. Local Docker Quickstart
+
+From the project root:
 
 ```bash
 cp .env.example .env
-cp server/.env.example server/.env
-```
-
-Replace these values before running production-like deployments:
-
-| Variable | Required for local Docker | Required for production | Notes |
-| --- | --- | --- | --- |
-| `JWT_SECRET` | Yes | Yes | Use a long random secret. |
-| `MONGO_URI` | Provided by compose | Yes | Use MongoDB Atlas or managed MongoDB outside local compose. |
-| `REDIS_HOST` | Provided by compose | Yes | Use Redis Cloud or managed Redis outside local compose. |
-| `AZURE_SERVICE_BUS_CONNECTION_STRING` | Optional | Yes | Required for real queue publishing. |
-| `AZURE_SERVICE_BUS_QUEUE_NAME` | Yes | Yes | Defaults to `chatterbox-messages`. |
-| `CORS_ALLOWED_ORIGINS` | Yes | Yes | Comma-separated allowed browser origins. |
-
-## 4. Install Dependencies
-
-Backend:
-
-```bash
-cd server
-npm install
-```
-
-Frontend:
-
-```bash
-cd client
-npm install
-```
-
-## 5. Local Docker Services
-
-The Sprint 1 `docker-compose.yml` defines:
-
-- `server`: Node.js API service
-- `mongo`: MongoDB 7 with volume persistence
-- `redis`: Redis 7 with append-only persistence
-
-After Sprint 2 implements the backend entry point, run:
-
-```bash
+# Replace JWT_SECRET in .env with a long random local secret.
 docker compose up --build
 ```
 
-Useful local URLs after implementation:
-
-| Service | URL |
+| Service | Local address |
 | --- | --- |
-| API health | `http://localhost:5000/api/health` |
-| REST API base | `http://localhost:5000/api` |
-| Socket.io | `http://localhost:5000` |
-| React client | `http://localhost:3000` |
+| React application | `http://localhost:3000` |
+| REST API | `http://localhost:5000/api` |
+| Socket.io server | `http://localhost:5000` |
+| Health endpoint | `http://localhost:5000/api/health` |
+| MongoDB published port | `localhost:27017` |
+| Redis published port | `localhost:6379` |
 
-## 6. MongoDB Setup Options
+Persistent volumes keep MongoDB and Redis state after `docker compose down`. Use `docker compose down --volumes` only when local stored messages and accounts may be discarded.
 
-### Local Docker MongoDB
+## 4. Native Development Setup
 
-Use the default `MONGO_URI`:
+```bash
+cp server/.env.example server/.env
+cp client/.env.example client/.env
 
-```text
-mongodb://mongo:27017/chatterbox
+cd server
+npm install
+npm run dev
+
+cd ../client
+npm install
+npm run dev
 ```
 
-### MongoDB Atlas
+For native development, update `server/.env` from Docker hostnames to local dependencies:
+
+```dotenv
+MONGO_URI=mongodb://localhost:27017/chatterbox
+REDIS_HOST=localhost
+```
+
+## 5. Runtime Environment Reference
+
+### HTTP, Browser, and Security
+
+| Variable | Local value | Production guidance |
+| --- | --- | --- |
+| `NODE_ENV` | `development` | Set `production`; enables required-variable validation. |
+| `SERVER_PORT` / `PORT` | `5000` | Internal API listener or platform-injected port. |
+| `CLIENT_PORT` | `3000` | Public Nginx port mapping when using Compose. |
+| `CLIENT_URL` | `http://localhost:3000` | Public HTTPS frontend origin. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Required allowlist of HTTPS UI origins. |
+| `VITE_API_BASE_URL` | `http://localhost:5000/api` | Public HTTPS API URL at client image build time. |
+| `VITE_SOCKET_URL` | `http://localhost:5000` | Public HTTPS Socket.io URL at client image build time. |
+| `JWT_SECRET` | Replace template value | Required; store as a long random secret. |
+| `JWT_EXPIRES_IN` | `1h` | Short-lived access-token duration. |
+| `BCRYPT_SALT_ROUNDS` | `12` | Increase only after latency assessment. |
+| `AUTH_RATE_LIMIT_WINDOW_MS` | `900000` | Authentication attempt window. |
+| `AUTH_RATE_LIMIT_MAX` | `20` | Attempts accepted within the window. |
+| `JSON_BODY_LIMIT` | `1mb` | Maximum parsed request payload. |
+| `COMPRESSION_THRESHOLD_BYTES` | `1024` | Minimum response size for gzip compression. |
+| `TRUST_PROXY` | `false` | Set `true` behind a controlled reverse proxy. |
+| `SHUTDOWN_TIMEOUT_MS` | `10000` | Graceful resource shutdown deadline. |
+
+### Data and Integration Services
+
+| Variable | Local value | Production guidance |
+| --- | --- | --- |
+| `MONGO_URI` | `mongodb://mongo:27017/chatterbox` | Required Atlas or managed MongoDB URI. |
+| `MONGO_TEST_URI` | Local test URI | Only used by tests. |
+| `MONGO_INITDB_DATABASE` | `chatterbox` | Local Mongo container initialization. |
+| `MONGO_MAX_POOL_SIZE` | `10` | Tune per API replica and provider limit. |
+| `MONGO_PORT` | `27017` | Local published port only. |
+| `REDIS_HOST` / `REDIS_PORT` | `redis` / `6379` | Managed Redis endpoint. |
+| `REDIS_PUBLIC_PORT` | `6379` | Local published port only. |
+| `REDIS_PASSWORD` | Empty | Supply through secret storage when required. |
+| `REDIS_DB` / `REDIS_TLS` | `0` / `false` | Enable TLS for managed providers. |
+| `REDIS_CLUSTER_NODES` | Empty | Optional `host-a:6379,host-b:6379` for cluster mode. |
+| `MESSAGE_HISTORY_LIMIT` | `50` | Cached/join-history message count. |
+| `MESSAGE_CACHE_TTL_SECONDS` | `86400` | Recent-history cache duration. |
+| `ONLINE_USER_TTL_SECONDS` | `3600` | Presence expiry guard. |
+| `AZURE_SERVICE_BUS_CONNECTION_STRING` | Empty | Required in production; use secret storage. |
+| `AZURE_SERVICE_BUS_QUEUE_NAME` | `chatterbox-messages` | Queue receiving delivery events. |
+
+## 6. Production Compose Deployment
+
+The production override sets `NODE_ENV=production`, trusts the deployment proxy, requires external service credentials, and applies resource limits.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build -d
+```
+
+Before launching, provide at minimum:
+
+```dotenv
+CLIENT_URL=https://chat.example.com
+CORS_ALLOWED_ORIGINS=https://chat.example.com
+VITE_API_BASE_URL=https://api.example.com/api
+VITE_SOCKET_URL=https://api.example.com
+JWT_SECRET=<secret-manager-value>
+MONGO_URI=<managed-mongodb-uri>
+AZURE_SERVICE_BUS_CONNECTION_STRING=<secret-manager-value>
+```
+
+For an external Redis service also replace `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, and `REDIS_TLS`; clustered providers may use `REDIS_CLUSTER_NODES`. In a hosted platform, deploy only the `client` and `server` images and bind managed data services rather than running the Compose MongoDB/Redis containers.
+
+## 7. Azure Service Bus Setup
+
+1. In Azure, create a Service Bus namespace using Standard or Premium tier.
+2. Create a queue named `chatterbox-messages`, or choose a name and set `AZURE_SERVICE_BUS_QUEUE_NAME`.
+3. Create a shared access policy scoped to the queue with `Send` and `Listen` rights for the application workload.
+4. Store the policy connection string in the deployment secret manager as `AZURE_SERVICE_BUS_CONNECTION_STRING`.
+5. Launch the server and send a message in a room.
+6. Verify an event appears in the queue metrics or with a controlled receiver process.
+
+The live chat message is persisted before publication. A transient queue publish failure is logged without deleting or hiding an already delivered message.
+
+## 8. MongoDB Atlas Option
 
 1. Create an Atlas project and cluster.
-2. Create a database user with read/write access.
-3. Add the deployment IP address to the Atlas access list.
-4. Copy the connection string.
-5. Set `MONGO_URI` to the Atlas URI.
-6. Confirm the database name is `chatterbox` or update the URI path.
+2. Create a least-privilege database user with application database read/write rights.
+3. Restrict network access to deployment egress addresses.
+4. Copy an SRV connection string with the `chatterbox` database path.
+5. Set `MONGO_URI` and tune `MONGO_MAX_POOL_SIZE` against the provider connection limit.
+6. Configure backup and alerting policies.
 
-## 7. Redis Setup Options
+## 9. Redis Cloud Option
 
-### Local Docker Redis
+1. Create a Redis Cloud database in the deployment region.
+2. Copy endpoint, port, credentials, and TLS requirement.
+3. Configure `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, and `REDIS_TLS=true` where applicable.
+4. For clustered plans, specify startup endpoints in `REDIS_CLUSTER_NODES`.
+5. Verify the API health route reports Redis as `ready`.
 
-Use:
+## 10. Health and Operational Checks
 
-```text
-REDIS_HOST=redis
-REDIS_PORT=6379
-```
-
-### Redis Cloud
-
-1. Create a Redis Cloud database.
-2. Copy host, port, username if applicable, password, and TLS settings.
-3. Set Redis variables in the server environment.
-4. Enable TLS in the application config when the provider requires it.
-
-## 8. Azure Service Bus Setup
-
-1. Create an Azure Service Bus namespace.
-2. Create a queue named `chatterbox-messages`.
-3. Create a shared access policy with send/listen permissions for development.
-4. Copy the connection string.
-5. Set `AZURE_SERVICE_BUS_CONNECTION_STRING`.
-6. Set `AZURE_SERVICE_BUS_QUEUE_NAME=chatterbox-messages`.
-
-For local development without Azure credentials, the service layer should log a controlled warning and skip publish attempts rather than crash the chat workflow.
-
-## 9. Health Checks
-
-Expected final health checks:
-
-| Target | Check |
-| --- | --- |
-| Server | `GET /api/health` returns process and dependency status. |
-| MongoDB | Compose `mongosh` ping succeeds. |
-| Redis | Compose `redis-cli ping` returns `PONG`. |
-| Client | Nginx serves `index.html` and client routes fall back correctly. |
-
-## 10. Troubleshooting
-
-| Symptom | Likely Cause | Fix |
+| Component | Check | Healthy result |
 | --- | --- | --- |
-| API cannot connect to MongoDB | Wrong host for runtime mode | Use `mongo` inside compose and `localhost` outside compose. |
-| API cannot connect to Redis | Redis host or password mismatch | Verify Redis variables and provider TLS requirements. |
-| Socket connects then disconnects | Missing or invalid JWT | Confirm client sends `auth.token` during Socket.io connection. |
-| CORS error in browser | Client origin missing from allowlist | Add origin to `CORS_ALLOWED_ORIGINS`. |
-| Queue publish fails | Missing Azure connection string or queue | Set Service Bus variables and verify queue exists. |
-| Docker health check fails | Backend route not implemented yet | Health endpoint is implemented in Sprint 2. |
+| Server | `GET /api/health` | HTTP `200`, `status: "ok"`, MongoDB and Redis `ready` |
+| Client | `GET /health` inside/client container | HTTP `200` from Nginx |
+| MongoDB | Compose `mongosh` health check | Ping succeeds |
+| Redis | Compose `redis-cli ping` health check | `PONG` |
+| Service Bus | Send a chat message with credentials configured | Queue delivery event accepted |
 
-## 11. Production Readiness Checklist
+The server returns HTTP `503` with `status: "degraded"` when required local MongoDB or Redis readiness is unavailable.
 
-- Use production Dockerfiles with non-root users.
-- Serve the React client through Nginx.
-- Use managed MongoDB and Redis with backups enabled.
-- Store secrets in the deployment platform secret manager.
-- Restrict CORS to real frontend domains.
-- Enable Helmet security headers.
-- Enable compression middleware.
-- Run CI tests before deployment.
-- Monitor API errors, queue failures, and dependency health.
+## 11. CI Pipeline
+
+`.github/workflows/ci.yml` runs on changes targeting `main`. It installs from lockfiles, runs backend coverage enforcement, runs frontend tests, produces the Vite bundle, and builds both production Docker images.
+
+## 12. Troubleshooting
+
+| Symptom | Cause to check | Resolution |
+| --- | --- | --- |
+| Server exits at startup in production | Required variables are missing | Supply JWT, MongoDB, CORS, and Azure Service Bus values. |
+| Health endpoint returns `503` | MongoDB or Redis unavailable | Inspect connection URI/host, TLS, credentials, and container health. |
+| Browser reports CORS failure | Origin not in allowlist | Add the exact UI origin to `CORS_ALLOWED_ORIGINS` and restart. |
+| Socket authentication fails | Missing, expired, or revoked JWT | Sign in again and inspect handshake `auth.token`. |
+| History is absent on join | No stored messages or dependency issue | Check MongoDB persistence and Redis readiness. |
+| Service Bus publish logs failure | Queue policy/name/network mismatch | Confirm queue, access rights, and secret value. |
+| Client calls old API domain | Vite values changed after build | Rebuild the client image with updated `VITE_*` values. |
+
+## 13. Release Checklist
+
+- Rotate all template secrets and use secret-manager injection.
+- Set HTTPS browser origins and public API/socket build URLs.
+- Confirm managed MongoDB backups and Redis TLS/access controls.
+- Confirm Azure Service Bus queue permissions and monitoring.
+- Run server coverage, client tests, and the client production build.
+- Build images and validate health probes in the target environment.
+- Monitor application errors, dependency readiness, and queue failures after release.

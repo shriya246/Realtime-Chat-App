@@ -1,0 +1,50 @@
+# Purpose: Applies stricter production settings and resource budgets to the base Compose topology.
+
+services:
+  client:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128M
+        reservations:
+          memory: 32M
+
+  server:
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "true"
+      CLIENT_URL: ${CLIENT_URL:?Set CLIENT_URL for production}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?Set CORS_ALLOWED_ORIGINS for production}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET for production}
+      MONGO_URI: ${MONGO_URI:?Set MONGO_URI for production}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING:?Set AZURE_SERVICE_BUS_CONNECTION_STRING for production}
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+  mongo:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 768M
+        reservations:
+          memory: 256M
+
+  redis:
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 256M
+        reservations:
+          memory: 64M

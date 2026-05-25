@@ -1,0 +1,84 @@
+/**
+ * Purpose: Defines the global ChatterBox application canvas, typography, and reusable UI primitives.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    font-family: Inter, "Segoe UI", Arial, sans-serif;
+    background: #0e141d;
+    color: #eef3f7;
+  }
+
+  * {
+    box-sizing: border-box;
+    letter-spacing: 0;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    min-width: 320px;
+    background: #0e141d;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  ::selection {
+    background: rgba(36, 184, 166, 0.3);
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 8px;
+    background: #344353;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .field {
+    @apply h-11 w-full rounded-md border border-stroke bg-canvas px-3 text-sm text-ink outline-none transition;
+  }
+
+  .field::placeholder {
+    color: #78899d;
+  }
+
+  .field:focus {
+    @apply border-accent ring-2 ring-accent/20;
+  }
+
+  .primary-button {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-md bg-accent px-4 text-sm font-semibold text-canvas transition hover:bg-accent-hover disabled:opacity-60;
+  }
+
+  .icon-button {
+    @apply inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-raised hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60;
+  }
+}

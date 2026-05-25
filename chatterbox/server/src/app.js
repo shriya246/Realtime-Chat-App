@@ -2,20 +2,20 @@
  * Purpose: Builds the Express application, middleware chain, health route, and API route mounting.
  */
 
+const compression = require('compression');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const express = require('express');
+const helmet = require('helmet');
 const mongoose = require('mongoose');
 
+const { getConfig } = require('./config');
 const redis = require('./config/redis');
 const authRoutes = require('./routes/authRoutes');
+const roomRoutes = require('./routes/roomRoutes');
 const userRoutes = require('./routes/userRoutes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-
-dotenv.config();
-
-const DEFAULT_CLIENT_URL = 'http://localhost:3000';
-const JSON_BODY_LIMIT = '1mb';
+const { createRequestLogger } = require('./middleware/requestLogger');
+const { forbiddenError } = require('./utils/errors');
 
 /**
  * Parses comma-separated CORS origins from configuration.
@@ -23,8 +23,7 @@ const JSON_BODY_LIMIT = '1mb';
  * @returns {Array<string>} Allowed origins.
  */
 const getAllowedOrigins = () => {
-  const configuredOrigins = process.env.CORS_ALLOWED_ORIGINS || process.env.CLIENT_URL || DEFAULT_CLIENT_URL;
-  return configuredOrigins.split(',').map((origin) => origin.trim()).filter(Boolean);
+  return getConfig().cors.allowedOrigins;
 };
 
 /**
@@ -42,29 +41,41 @@ const buildCorsOptions = () => {
         return callback(null, true);
       }
 
-      return callback(new Error('Origin is not allowed by CORS.'));
+      return callback(forbiddenError('Origin is not allowed by CORS.'));
     }
   };
 };
 
 const app = express();
+const config = getConfig();
 
+if (config.server.trustProxy) {
+  app.set('trust proxy', 1);
+}
+
+app.use(createRequestLogger());
+app.use(helmet());
+app.use(compression({ threshold: config.security.compressionThresholdBytes }));
 app.use(cors(buildCorsOptions()));
-app.use(express.json({ limit: JSON_BODY_LIMIT }));
+app.use(express.json({ limit: config.server.jsonBodyLimit }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/api/health', async (_req, res, next) => {
   try {
     const redisClient = redis.getRedisClient();
 
-    return res.status(200).json({
+    const mongoReady = mongoose.connection.readyState === 1;
+    const redisReady = redisClient.status === 'ready';
+    const healthy = mongoReady && redisReady;
+
+    return res.status(healthy ? 200 : 503).json({
       success: true,
       data: {
         service: 'chatterbox-server',
-        status: 'ok',
+        status: healthy ? 'ok' : 'degraded',
         uptimeSeconds: Math.floor(process.uptime()),
-        mongodb: mongoose.connection.readyState,
-        redis: redisClient.status || 'unknown'
+        mongodb: mongoReady ? 'ready' : 'not_ready',
+        redis: redisReady ? 'ready' : redisClient.status || 'not_ready'
       }
     });
   } catch (error) {
@@ -74,6 +85,7 @@ app.get('/api/health', async (_req, res, next) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/rooms', roomRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

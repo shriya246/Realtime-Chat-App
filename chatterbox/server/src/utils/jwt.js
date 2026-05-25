@@ -4,7 +4,8 @@
 
 const jwt = require('jsonwebtoken');
 
-const DEFAULT_JWT_EXPIRES_IN = '1h';
+const { getConfig } = require('../config');
+
 const DEFAULT_BLACKLIST_TTL_SECONDS = 60 * 60;
 
 /**
@@ -13,12 +14,10 @@ const DEFAULT_BLACKLIST_TTL_SECONDS = 60 * 60;
  * @returns {string} JWT secret.
  */
 const getJwtSecret = () => {
-  if (process.env.JWT_SECRET) {
-    return process.env.JWT_SECRET;
-  }
+  const { secret } = getConfig().jwt;
 
-  if (process.env.NODE_ENV === 'test') {
-    return 'test-only-chatterbox-jwt-secret';
+  if (secret) {
+    return secret;
   }
 
   throw new Error('JWT_SECRET is required.');
@@ -37,9 +36,7 @@ const signToken = (user) => {
     email: user.email
   };
 
-  return jwt.sign(payload, getJwtSecret(), {
-    expiresIn: process.env.JWT_EXPIRES_IN || DEFAULT_JWT_EXPIRES_IN
-  });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: getConfig().jwt.expiresIn });
 };
 
 /**

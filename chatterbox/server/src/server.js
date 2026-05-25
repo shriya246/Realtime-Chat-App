@@ -4,19 +4,17 @@
 
 const http = require('http');
 
-const dotenv = require('dotenv');
-
 const app = require('./app');
+const { getConfig, validateConfig } = require('./config');
 const { connectDB, disconnectDB } = require('./config/db');
 const { closeRedis, connectRedis } = require('./config/redis');
+const { closeServiceBus } = require('./services/azureServiceBusService');
+const { closeSocketServer, initializeSocketServer } = require('./socket/socketManager');
 
-dotenv.config();
-
-const DEFAULT_PORT = 5000;
-const SHUTDOWN_TIMEOUT_MS = 10000;
-
-const port = Number(process.env.PORT || process.env.SERVER_PORT || DEFAULT_PORT);
+const config = validateConfig(getConfig());
+const port = config.server.port;
 const server = http.createServer(app);
+const io = initializeSocketServer(server);
 
 /**
  * Starts database/cache connections and begins listening for HTTP requests.
@@ -44,28 +42,27 @@ const startServer = async () => {
  * @returns {Promise<void>} Resolves after shutdown completes.
  */
 const shutdown = async (signal) => {
+  let forceExitTimer;
+
   try {
     console.info(`${signal} received. Shutting down gracefully.`);
 
-    const forceExitTimer = setTimeout(() => {
+    forceExitTimer = setTimeout(() => {
       console.error('Graceful shutdown timed out.');
       process.exit(1);
-    }, SHUTDOWN_TIMEOUT_MS);
+    }, config.server.shutdownTimeoutMs);
 
-    server.close(async () => {
-      try {
-        await disconnectDB();
-        await closeRedis();
-        clearTimeout(forceExitTimer);
-        console.info('Shutdown complete.');
-        process.exit(0);
-      } catch (error) {
-        clearTimeout(forceExitTimer);
-        console.error('Shutdown failed:', error.message);
-        process.exit(1);
-      }
-    });
+    await closeSocketServer(io);
+    await closeServiceBus();
+    await disconnectDB();
+    await closeRedis();
+    clearTimeout(forceExitTimer);
+    console.info('Shutdown complete.');
+    process.exit(0);
   } catch (error) {
+    if (forceExitTimer) {
+      clearTimeout(forceExitTimer);
+    }
     console.error('Unexpected shutdown failure:', error.message);
     process.exit(1);
   }
@@ -87,6 +84,7 @@ process.on('unhandledRejection', (reason) => {
 startServer();
 
 module.exports = {
+  io,
   server,
   startServer,
   shutdown

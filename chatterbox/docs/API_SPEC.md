@@ -64,6 +64,23 @@ io("http://localhost:5000", {
 | --- | --- | --- | --- |
 | GET | `/api/health` | No | Returns service health and dependency status. |
 
+Healthy response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "service": "chatterbox-server",
+    "status": "ok",
+    "uptimeSeconds": 120,
+    "mongodb": "ready",
+    "redis": "ready"
+  }
+}
+```
+
+The route returns HTTP `503` with `status: "degraded"` if MongoDB or Redis is not ready.
+
 ### Auth Routes
 
 #### POST `/api/auth/register`
@@ -207,13 +224,30 @@ Removes the current user from a room.
 
 #### GET `/api/rooms/:id/messages`
 
-Returns paginated message history.
+Returns chronological message history using an efficient older-message cursor. Access follows public/private room visibility rules.
 
 | Query | Default | Description |
 | --- | --- | --- |
 | `limit` | `50` | Maximum messages returned. |
 | `before` | none | Cursor ObjectId for older messages. |
-| `page` | `1` | Page fallback for Sprint 5 compatibility. |
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [],
+    "pagination": {
+      "hasMore": true,
+      "limit": 50,
+      "nextCursor": "6652f514610b1b63e7d71103"
+    }
+  }
+}
+```
+
+`nextCursor` is `null` once there are no older messages.
 
 ## 6. Socket.io Events
 
@@ -254,6 +288,18 @@ Server emits to sender:
 
 - `message_history`
 - `socket_error` if validation or authorization fails
+
+Successful `message_history` payload:
+
+```json
+{
+  "roomId": "6652f40e610b1b63e7d71102",
+  "messages": [],
+  "source": "cache"
+}
+```
+
+The `source` field is `cache` when Redis served recent messages and `database` when MongoDB served history and Redis was warmed.
 
 #### Client emits `leave_room`
 
@@ -354,6 +400,20 @@ Server emits `typing_indicator` to other room members:
   "username": "shriya",
   "lastSeen": "2026-05-24T00:10:00.000Z"
 }
+```
+
+#### Server emits `online_users`
+
+Sent to a newly connected user after presence registration:
+
+```json
+[
+  {
+    "userId": "6652f2d0610b1b63e7d71101",
+    "username": "shriya",
+    "onlineAt": "2026-05-24T00:00:00.000Z"
+  }
+]
 ```
 
 ### Error Event

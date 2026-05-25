@@ -4,6 +4,7 @@
 
 const mongoose = require('mongoose');
 
+const { getConfig } = require('../config');
 const { AppError } = require('../utils/errors');
 
 /**
@@ -62,7 +63,7 @@ const notFoundHandler = (req, _res, next) => {
 const errorHandler = (error, _req, res, _next) => {
   const normalizedError = normalizeError(error);
 
-  if (process.env.NODE_ENV !== 'test' && normalizedError.statusCode >= 500) {
+  if (getConfig().environment !== 'test' && normalizedError.statusCode >= 500) {
     console.error(normalizedError.stack || normalizedError.message);
   }
 

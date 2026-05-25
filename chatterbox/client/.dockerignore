@@ -1,0 +1,10 @@
+# Purpose: Keeps local artifacts and sensitive environment files out of web-client build contexts.
+
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+npm-debug.log*
+src/**/*.test.jsx

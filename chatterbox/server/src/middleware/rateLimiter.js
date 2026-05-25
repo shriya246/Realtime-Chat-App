@@ -4,18 +4,19 @@
 
 const rateLimit = require('express-rate-limit');
 
-const DEFAULT_AUTH_WINDOW_MS = 15 * 60 * 1000;
-const DEFAULT_AUTH_MAX_REQUESTS = 20;
+const { getConfig } = require('../config');
 
 /**
  * Creates the auth route rate limiter.
  *
  * @returns {Function} Express rate-limit middleware.
  */
-const createAuthRateLimiter = () =>
-  rateLimit({
-    windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || DEFAULT_AUTH_WINDOW_MS),
-    max: Number(process.env.AUTH_RATE_LIMIT_MAX || DEFAULT_AUTH_MAX_REQUESTS),
+const createAuthRateLimiter = () => {
+  const config = getConfig();
+
+  return rateLimit({
+    windowMs: config.security.authWindowMs,
+    max: config.security.authMaxRequests,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -27,6 +28,7 @@ const createAuthRateLimiter = () =>
       }
     }
   });
+};
 
 module.exports = {
   createAuthRateLimiter

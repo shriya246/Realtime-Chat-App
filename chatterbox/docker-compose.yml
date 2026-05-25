@@ -1,21 +1,63 @@
-# Purpose: Local service topology for ChatterBox development.
+# Purpose: Runs the complete local ChatterBox stack with persistence, dependency health checks, and production images.
+
+name: chatterbox
 
 services:
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:5000/api}
+        VITE_SOCKET_URL: ${VITE_SOCKET_URL:-http://localhost:5000}
+    container_name: chatterbox-client
+    ports:
+      - "${CLIENT_PORT:-3000}:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   server:
     build:
       context: ./server
       dockerfile: Dockerfile
     container_name: chatterbox-server
-    env_file:
-      - ./.env.example
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       PORT: 5000
-      MONGO_URI: mongodb://mongo:27017/chatterbox
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      CLIENT_URL: http://localhost:3000
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret-for-local-use}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+      BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/chatterbox}
+      MONGO_MAX_POOL_SIZE: ${MONGO_MAX_POOL_SIZE:-10}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_TLS: ${REDIS_TLS:-false}
+      REDIS_CLUSTER_NODES: ${REDIS_CLUSTER_NODES:-}
+      AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING:-}
+      AZURE_SERVICE_BUS_QUEUE_NAME: ${AZURE_SERVICE_BUS_QUEUE_NAME:-chatterbox-messages}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      MESSAGE_HISTORY_LIMIT: ${MESSAGE_HISTORY_LIMIT:-50}
+      ONLINE_USER_TTL_SECONDS: ${ONLINE_USER_TTL_SECONDS:-3600}
+      MESSAGE_CACHE_TTL_SECONDS: ${MESSAGE_CACHE_TTL_SECONDS:-86400}
+      JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1mb}
+      COMPRESSION_THRESHOLD_BYTES: ${COMPRESSION_THRESHOLD_BYTES:-1024}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
     ports:
-      - "5000:5000"
+      - "${SERVER_PORT:-5000}:5000"
     depends_on:
       mongo:
         condition: service_healthy
@@ -23,7 +65,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/api/health || exit 1"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -33,9 +81,9 @@ services:
     image: mongo:7
     container_name: chatterbox-mongo
     environment:
-      MONGO_INITDB_DATABASE: chatterbox
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE:-chatterbox}
     ports:
-      - "27017:27017"
+      - "${MONGO_PORT:-27017}:27017"
     volumes:
       - mongo-data:/data/db
     restart: unless-stopped
@@ -51,7 +99,7 @@ services:
     container_name: chatterbox-redis
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PUBLIC_PORT:-6379}:6379"
     volumes:
       - redis-data:/data
     restart: unless-stopped

@@ -1,0 +1,58 @@
+# Purpose: Validates ChatterBox tests, production builds, and deployable container images on change.
+
+name: ChatterBox CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Run server tests with coverage gate
+        working-directory: server
+        run: npm test -- --coverage --runInBand
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Run client tests
+        working-directory: client
+        run: npm test -- --runInBand
+
+      - name: Build client production assets
+        working-directory: client
+        run: npm run build
+
+      - name: Build server container image
+        run: docker build --tag chatterbox-server:ci ./server
+
+      - name: Build client container image
+        run: docker build --tag chatterbox-client:ci ./client

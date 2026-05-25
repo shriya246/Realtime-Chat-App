@@ -4,9 +4,10 @@
 
 const mongoose = require('mongoose');
 
+const { getConfig } = require('./index');
+
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_RETRY_DELAY_MS = 2000;
-const DEFAULT_MAX_POOL_SIZE = 10;
 
 /**
  * Waits for a specified duration.
@@ -25,11 +26,9 @@ const delay = (milliseconds) =>
  * @returns {string} MongoDB connection string.
  */
 const resolveMongoUri = () => {
-  if (process.env.NODE_ENV === 'test') {
-    return process.env.MONGO_TEST_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/chatterbox_test';
-  }
+  const config = getConfig();
 
-  return process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/chatterbox';
+  return config.environment === 'test' ? config.mongo.testUri || config.mongo.uri : config.mongo.uri;
 };
 
 /**
@@ -42,13 +41,14 @@ const resolveMongoUri = () => {
  * @returns {Promise<typeof mongoose>} Mongoose instance.
  */
 const connectDB = async ({ maxRetries = DEFAULT_MAX_RETRIES, retryDelayMs = DEFAULT_RETRY_DELAY_MS, mongoUri } = {}) => {
+  const config = getConfig();
   const uri = mongoUri || resolveMongoUri();
   let attempt = 0;
 
   while (attempt < maxRetries) {
     try {
       await mongoose.connect(uri, {
-        maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE || DEFAULT_MAX_POOL_SIZE),
+        maxPoolSize: config.mongo.maxPoolSize,
         serverSelectionTimeoutMS: 5000
       });
 

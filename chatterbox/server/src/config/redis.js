@@ -4,8 +4,8 @@
 
 const Redis = require('ioredis');
 
-const DEFAULT_REDIS_PORT = 6379;
-const DEFAULT_REDIS_DB = 0;
+const { getConfig } = require('./index');
+
 const DEFAULT_RETRY_DELAY_MS = 200;
 const MAX_RETRY_DELAY_MS = 2000;
 
@@ -26,6 +26,21 @@ const clearExpiredMemoryKey = (key) => {
     memoryStore.delete(key);
     memoryExpirations.delete(key);
   }
+};
+
+/**
+ * Tests whether a key matches a simple Redis glob pattern.
+ *
+ * @param {string} key - Candidate key.
+ * @param {string} pattern - Redis-style glob pattern.
+ * @returns {boolean} True when the key matches.
+ */
+const matchesPattern = (key, pattern) => {
+  const escapedPattern = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+
+  return new RegExp(`^${escapedPattern}$`).test(key);
 };
 
 /**
@@ -77,6 +92,55 @@ const createMemoryRedisClient = () => ({
       throw error;
     }
   },
+  async lpush(key, ...values) {
+    try {
+      clearExpiredMemoryKey(key);
+      const list = Array.isArray(memoryStore.get(key)) ? memoryStore.get(key) : [];
+      list.unshift(...values);
+      memoryStore.set(key, list);
+      return list.length;
+    } catch (error) {
+      throw error;
+    }
+  },
+  async ltrim(key, start, end) {
+    try {
+      clearExpiredMemoryKey(key);
+      const list = Array.isArray(memoryStore.get(key)) ? memoryStore.get(key) : [];
+      memoryStore.set(key, list.slice(start, end + 1));
+      return 'OK';
+    } catch (error) {
+      throw error;
+    }
+  },
+  async lrange(key, start, end) {
+    try {
+      clearExpiredMemoryKey(key);
+      const list = Array.isArray(memoryStore.get(key)) ? memoryStore.get(key) : [];
+      return list.slice(start, end + 1);
+    } catch (error) {
+      throw error;
+    }
+  },
+  async scan(_cursor, ...argumentsList) {
+    try {
+      const matchIndex = argumentsList.indexOf('MATCH');
+      const pattern = matchIndex >= 0 ? argumentsList[matchIndex + 1] : '*';
+      const keys = [];
+
+      memoryStore.forEach((_value, key) => {
+        clearExpiredMemoryKey(key);
+
+        if (memoryStore.has(key) && matchesPattern(key, pattern)) {
+          keys.push(key);
+        }
+      });
+
+      return ['0', keys];
+    } catch (error) {
+      throw error;
+    }
+  },
   async quit() {
     try {
       memoryStore.clear();
@@ -93,15 +157,59 @@ const createMemoryRedisClient = () => ({
  *
  * @returns {object} ioredis connection options.
  */
-const getRedisOptions = () => ({
-  host: process.env.REDIS_HOST || '127.0.0.1',
-  port: Number(process.env.REDIS_PORT || DEFAULT_REDIS_PORT),
-  password: process.env.REDIS_PASSWORD || undefined,
-  db: Number(process.env.REDIS_DB || DEFAULT_REDIS_DB),
-  lazyConnect: true,
-  tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-  retryStrategy: (times) => Math.min(times * DEFAULT_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS)
-});
+const getRedisOptions = () => {
+  const { redis } = getConfig();
+
+  return {
+    host: redis.host,
+    port: redis.port,
+    password: redis.password,
+    db: redis.db,
+    lazyConnect: true,
+    tls: redis.tls ? {} : undefined,
+    retryStrategy: (times) => Math.min(times * DEFAULT_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS)
+  };
+};
+
+/**
+ * Parses optional comma-separated Redis Cluster node endpoints.
+ *
+ * @returns {Array<{ host: string, port: number }>} Cluster startup nodes.
+ */
+const getRedisClusterNodes = () => {
+  const { redis } = getConfig();
+
+  if (!redis.clusterNodes) {
+    return [];
+  }
+
+  return redis.clusterNodes.split(',')
+    .map((node) => node.trim())
+    .filter(Boolean)
+    .map((node) => {
+      const [host, port = redis.port] = node.split(':');
+      return { host, port: Number(port) };
+    });
+};
+
+/**
+ * Builds ioredis Cluster settings for managed production Redis deployments.
+ *
+ * @returns {object} Cluster configuration.
+ */
+const getRedisClusterOptions = () => {
+  const { redis } = getConfig();
+
+  return {
+    clusterRetryStrategy: (times) => Math.min(times * DEFAULT_RETRY_DELAY_MS, MAX_RETRY_DELAY_MS),
+    lazyConnect: true,
+    redisOptions: {
+      db: redis.db,
+      password: redis.password,
+      tls: redis.tls ? {} : undefined
+    }
+  };
+};
 
 /**
  * Returns the Redis client singleton.
@@ -113,12 +221,15 @@ const getRedisClient = () => {
     return redisClient;
   }
 
-  if (process.env.NODE_ENV === 'test') {
+  if (getConfig().environment === 'test') {
     redisClient = createMemoryRedisClient();
     return redisClient;
   }
 
-  redisClient = new Redis(getRedisOptions());
+  const clusterNodes = getRedisClusterNodes();
+  redisClient = clusterNodes.length > 0
+    ? new Redis.Cluster(clusterNodes, getRedisClusterOptions())
+    : new Redis(getRedisOptions());
 
   redisClient.on('connect', () => {
     console.info('Redis connection established.');
@@ -223,6 +334,72 @@ const expire = async (key, ttlSeconds) => {
 };
 
 /**
+ * Prepends serialized values to a Redis list.
+ *
+ * @param {string} key - Redis list key.
+ * @param {...string} values - Values to prepend.
+ * @returns {Promise<number>} Length of the list after insertion.
+ */
+const lpush = async (key, ...values) => {
+  try {
+    return await getRedisClient().lpush(key, ...values);
+  } catch (error) {
+    console.error('Redis LPUSH failed:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Retains a bounded range of Redis list items.
+ *
+ * @param {string} key - Redis list key.
+ * @param {number} start - Inclusive start index.
+ * @param {number} end - Inclusive end index.
+ * @returns {Promise<string>} Redis response.
+ */
+const ltrim = async (key, start, end) => {
+  try {
+    return await getRedisClient().ltrim(key, start, end);
+  } catch (error) {
+    console.error('Redis LTRIM failed:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Reads a range of serialized items from a Redis list.
+ *
+ * @param {string} key - Redis list key.
+ * @param {number} start - Inclusive start index.
+ * @param {number} end - Inclusive end index.
+ * @returns {Promise<Array<string>>} List values.
+ */
+const lrange = async (key, start, end) => {
+  try {
+    return await getRedisClient().lrange(key, start, end);
+  } catch (error) {
+    console.error('Redis LRANGE failed:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Scans Redis keys without blocking the server with a full key enumeration.
+ *
+ * @param {string} cursor - Redis scan cursor.
+ * @param {string} pattern - Glob pattern to match.
+ * @returns {Promise<Array<string|Array<string>>>} Next cursor and matching keys.
+ */
+const scan = async (cursor, pattern) => {
+  try {
+    return await getRedisClient().scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+  } catch (error) {
+    console.error('Redis SCAN failed:', error.message);
+    throw error;
+  }
+};
+
+/**
  * Closes the Redis client.
  *
  * @returns {Promise<void>} Resolves when the connection is closed.
@@ -250,6 +427,11 @@ module.exports = {
   del,
   expire,
   get,
+  getRedisClusterNodes,
   getRedisClient,
+  lpush,
+  lrange,
+  ltrim,
+  scan,
   set
 };
