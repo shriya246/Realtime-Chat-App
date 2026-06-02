@@ -25,5 +25,9 @@ router.get('/:id/search', messageSearchValidators, conversationController.search
 router.get('/:id/messages', directMessageHistoryValidators, conversationController.getConversationMessages);
 router.post('/:id/read', conversationIdValidators, conversationController.markConversationAsRead);
 router.patch('/:id/settings', conversationSettingsValidators, conversationController.updateSettings);
+router.patch('/locked-pin', conversationController.setLockedChatPin);
+router.post('/:id/unlock', conversationIdValidators, conversationController.unlockConversation);
+router.patch('/:id/disappearing', conversationIdValidators, conversationController.updateDisappearingMode);
+router.patch('/:id/encryption', conversationIdValidators, conversationController.updateEncryptionMode);
 
 module.exports = router;

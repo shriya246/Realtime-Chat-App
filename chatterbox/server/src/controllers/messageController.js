@@ -4,6 +4,7 @@
 
 const Message = require('../models/Message');
 const { canAccessRoom, findRoom } = require('./roomController');
+const { isExpiredFilter, isRoomAdmin } = require('../services/privacyService');
 const { forbiddenError } = require('../utils/errors');
 
 const DEFAULT_MESSAGE_LIMIT = 50;
@@ -24,7 +25,8 @@ const formatHistoryMessage = (message) => ({
   content: message.content,
   type: message.type,
   timestamp: message.timestamp.toISOString(),
-  status: message.status
+  status: message.status,
+  expiresAt: message.expiresAt ? message.expiresAt.toISOString() : null
 });
 
 /**
@@ -44,7 +46,21 @@ const getMessages = async (req, res, next) => {
     }
 
     const limit = req.query.limit || DEFAULT_MESSAGE_LIMIT;
-    const query = { roomId: room._id };
+    if (room.settings?.newMembersCanSeeRecentHistory === false && !isRoomAdmin(room, req.user.id)) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          messages: [],
+          pagination: {
+            hasMore: false,
+            limit: req.query.limit || DEFAULT_MESSAGE_LIMIT,
+            nextCursor: null
+          }
+        }
+      });
+    }
+
+    const query = { roomId: room._id, ...isExpiredFilter() };
 
     if (req.query.before) {
       query._id = { $lt: req.query.before };

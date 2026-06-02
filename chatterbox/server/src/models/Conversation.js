@@ -34,6 +34,14 @@ const conversationSettingSchema = new Schema(
       type: Boolean,
       default: false
     },
+    locked: {
+      type: Boolean,
+      default: false
+    },
+    unlockedUntil: {
+      type: Date,
+      default: null
+    },
     updatedAt: {
       type: Date,
       default: Date.now
@@ -79,6 +87,16 @@ const conversationSchema = new Schema(
     settings: {
       type: [conversationSettingSchema],
       default: []
+    },
+    disappearingMode: {
+      type: String,
+      enum: ['off', '24h', '7d', '90d'],
+      default: 'off'
+    },
+    encryptedModeEnabled: {
+      type: Boolean,
+      default: false,
+      required: true
     }
   },
   {

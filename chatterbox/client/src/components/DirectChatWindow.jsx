@@ -3,9 +3,10 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, Mic, Paperclip, Search, SendHorizontal, Square, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Ban, Flag, LockKeyhole, Mic, Paperclip, Search, SendHorizontal, Shield, Square, Timer, X } from 'lucide-react';
 
 import MessageBubble from './MessageBubble';
+import { encryptDemoMessage, ensureDemoKey } from '../services/encryptionDemo';
 
 /**
  * Renders a selected one-to-one conversation.
@@ -22,6 +23,12 @@ const DirectChatWindow = ({
   error,
   isLoading,
   messages,
+  onBlockUser = () => undefined,
+  onLockChat = () => undefined,
+  onReport = () => undefined,
+  onToggleDisappearing = () => undefined,
+  onToggleEncryption = () => undefined,
+  onUnlockChat = async () => false,
   onBack,
   reactToMessage,
   retryMessage,
@@ -30,6 +37,7 @@ const DirectChatWindow = ({
   uploadAttachment = async () => null
 }) => {
   const [content, setContent] = useState('');
+  const [unlockSecret, setUnlockSecret] = useState('');
   const [localError, setLocalError] = useState('');
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [replyTo, setReplyTo] = useState(null);
@@ -45,6 +53,7 @@ const DirectChatWindow = ({
   const recordingChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
   const participant = conversation?.participant;
+  const isLocked = conversation?.settings?.locked && (!conversation.settings.unlockedUntil || new Date(conversation.settings.unlockedUntil) <= new Date());
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -98,13 +107,24 @@ const DirectChatWindow = ({
     try {
       setLocalError('');
       let uploadedAttachment = null;
+      let contentToSend = content;
+      let encryptionOptions = {};
 
       if (selectedAttachment) {
         setUploadProgress(1);
         uploadedAttachment = await uploadAttachment(selectedAttachment.file, setUploadProgress);
       }
 
-      if (sendMessage(content, replyTo?.id || null, uploadedAttachment)) {
+      if (conversation.encryptedModeEnabled && content.trim()) {
+        const encrypted = await encryptDemoMessage(conversation.id, content);
+        contentToSend = encrypted.ciphertext;
+        encryptionOptions = {
+          encryptionMetadata: encrypted.metadata,
+          isEncrypted: true
+        };
+      }
+
+      if (sendMessage(contentToSend, replyTo?.id || null, uploadedAttachment, encryptionOptions)) {
         if (selectedAttachment?.previewUrl) {
           URL.revokeObjectURL(selectedAttachment.previewUrl);
         }
@@ -265,7 +285,76 @@ const DirectChatWindow = ({
         <span className="hidden rounded-md border border-stroke bg-panel px-2.5 py-1 text-xs text-muted sm:inline-flex">
           {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Offline'}
         </span>
+        <button
+          aria-label={conversation.encryptedModeEnabled ? 'Disable encrypted demo' : 'Enable encrypted demo'}
+          className="icon-button hidden sm:inline-flex"
+          onClick={async () => {
+            await ensureDemoKey(conversation.id);
+            onToggleEncryption(!conversation.encryptedModeEnabled);
+          }}
+          type="button"
+        >
+          <Shield className="h-4 w-4" />
+        </button>
+        <label className="hidden items-center gap-1 text-xs text-muted sm:flex">
+          <Timer className="h-4 w-4" />
+          <select
+            aria-label="Disappearing messages"
+            className="rounded border border-stroke bg-panel px-2 py-1 text-xs"
+            onChange={(event) => onToggleDisappearing(event.target.value)}
+            value={conversation.disappearingMode || 'off'}
+          >
+            <option value="off">Off</option>
+            <option value="24h">24 hours</option>
+            <option value="7d">7 days</option>
+            <option value="90d">90 days</option>
+          </select>
+        </label>
+        <button aria-label="Lock chat" className="icon-button hidden sm:inline-flex" onClick={onLockChat} type="button">
+          <LockKeyhole className="h-4 w-4" />
+        </button>
+        <button aria-label="Block user" className="icon-button hidden sm:inline-flex" onClick={() => onBlockUser(participant)} type="button">
+          <Ban className="h-4 w-4" />
+        </button>
+        <button aria-label="Report chat" className="icon-button hidden sm:inline-flex" onClick={() => onReport({ reportedUserId: participant?.id, type: 'user' })} type="button">
+          <Flag className="h-4 w-4" />
+        </button>
       </header>
+
+      {(conversation.disappearingMode !== 'off' || conversation.encryptedModeEnabled) && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-stroke bg-panel px-3 py-2 text-xs text-muted sm:px-5">
+          {conversation.disappearingMode !== 'off' && <span>Disappearing messages: {conversation.disappearingMode}</span>}
+          {conversation.encryptedModeEnabled && <span>Encrypted demo: localStorage key, not production E2EE</span>}
+        </div>
+      )}
+
+      {isLocked ? (
+        <section className="flex flex-1 items-center justify-center px-4">
+          <form
+            className="w-full max-w-sm rounded-md border border-stroke bg-panel p-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const unlocked = await onUnlockChat(unlockSecret);
+              if (unlocked) {
+                setUnlockSecret('');
+              }
+            }}
+          >
+            <h3 className="mb-2 text-sm font-semibold text-ink">Locked chat</h3>
+            <p className="mb-3 text-xs text-muted">Enter your account password or local PIN to unlock this web-app-level private chat.</p>
+            <input
+              aria-label="Unlock secret"
+              className="field"
+              onChange={(event) => setUnlockSecret(event.target.value)}
+              placeholder="Password or PIN"
+              type="password"
+              value={unlockSecret}
+            />
+            <button className="primary-button mt-3 w-full" disabled={!unlockSecret} type="submit">Unlock chat</button>
+          </form>
+        </section>
+      ) : (
+        <>
 
       {visibleError && (
         <div className="mx-4 mt-4 flex items-center gap-2 rounded-md border border-coral/35 bg-coral/10 px-3 py-2 text-sm text-coral sm:mx-5">
@@ -399,6 +488,8 @@ const DirectChatWindow = ({
           </button>
         </div>
       </form>
+        </>
+      )}
     </main>
   );
 };

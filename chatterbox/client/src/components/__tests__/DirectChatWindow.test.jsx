@@ -7,6 +7,14 @@ import userEvent from '@testing-library/user-event';
 
 import DirectChatWindow from '../DirectChatWindow';
 
+const mockEncryptDemoMessage = jest.fn();
+const mockEnsureDemoKey = jest.fn();
+
+jest.mock('../../services/encryptionDemo', () => ({
+  encryptDemoMessage: (...args) => mockEncryptDemoMessage(...args),
+  ensureDemoKey: (...args) => mockEnsureDemoKey(...args)
+}));
+
 const baseConversation = {
   id: 'conversation-1',
   participant: {
@@ -55,6 +63,11 @@ describe('DirectChatWindow', () => {
     defaultProps.reactToMessage.mockClear();
     defaultProps.retryMessage.mockClear();
     defaultProps.sendMessage.mockClear();
+    mockEncryptDemoMessage.mockResolvedValue({
+      ciphertext: 'ciphertext-only',
+      metadata: { algorithm: 'AES-GCM', demoWarning: 'demo only', iv: 'iv' }
+    });
+    mockEnsureDemoKey.mockResolvedValue('demo-key');
   });
 
   test('opens a direct chat and displays optimistic sending state', () => {
@@ -91,7 +104,7 @@ describe('DirectChatWindow', () => {
       await user.click(screen.getByRole('button', { name: 'Send direct message' }));
     });
 
-    expect(defaultProps.sendMessage).toHaveBeenCalledWith('Hello Alex', null, null);
+    expect(defaultProps.sendMessage).toHaveBeenCalledWith('Hello Alex', null, null, {});
     expect(screen.getByLabelText('Direct message')).toHaveValue('');
   });
 
@@ -110,7 +123,7 @@ describe('DirectChatWindow', () => {
     });
 
     expect(screen.queryByText(/Replying to alex/i)).not.toBeInTheDocument();
-    expect(defaultProps.sendMessage).toHaveBeenCalledWith('Replying now', 'message-1', null);
+    expect(defaultProps.sendMessage).toHaveBeenCalledWith('Replying now', 'message-1', null, {});
   });
 
   test('calls reaction handler from the message action bar', async () => {
@@ -151,7 +164,7 @@ describe('DirectChatWindow', () => {
     });
 
     expect(uploadAttachment).toHaveBeenCalledWith(imageFile, expect.any(Function));
-    expect(defaultProps.sendMessage).toHaveBeenCalledWith('', null, expect.objectContaining({ id: 'attachment-1' }));
+    expect(defaultProps.sendMessage).toHaveBeenCalledWith('', null, expect.objectContaining({ id: 'attachment-1' }), {});
   });
 
   test('shows voice recorder fallback when MediaRecorder is unavailable', async () => {
@@ -167,5 +180,84 @@ describe('DirectChatWindow', () => {
 
     expect(screen.getByText('Voice recording is not available in this browser.')).toBeInTheDocument();
     global.MediaRecorder = originalMediaRecorder;
+  });
+
+  test('requires unlock for locked chats before showing messages', async () => {
+    const user = userEvent.setup();
+    const onUnlockChat = jest.fn().mockResolvedValue(true);
+
+    render(
+      <DirectChatWindow
+        {...defaultProps}
+        conversation={{
+          ...baseConversation,
+          settings: { locked: true }
+        }}
+        onUnlockChat={onUnlockChat}
+      />
+    );
+
+    expect(screen.getByText('Locked chat')).toBeInTheDocument();
+    expect(screen.queryByText('Can you reply?')).not.toBeInTheDocument();
+
+    await act(async () => {
+      await user.type(screen.getByLabelText('Unlock secret'), '1234');
+      await user.click(screen.getByRole('button', { name: 'Unlock chat' }));
+    });
+
+    expect(onUnlockChat).toHaveBeenCalledWith('1234');
+  });
+
+  test('updates disappearing mode from the direct chat header', async () => {
+    const user = userEvent.setup();
+    const onToggleDisappearing = jest.fn();
+
+    render(<DirectChatWindow {...defaultProps} conversation={{ ...baseConversation, disappearingMode: 'off' }} onToggleDisappearing={onToggleDisappearing} />);
+
+    await act(async () => {
+      await user.selectOptions(screen.getByLabelText('Disappearing messages'), '7d');
+    });
+
+    expect(onToggleDisappearing).toHaveBeenCalledWith('7d');
+  });
+
+  test('exposes block and report actions for direct chats', async () => {
+    const user = userEvent.setup();
+    const onBlockUser = jest.fn();
+    const onReport = jest.fn();
+
+    render(<DirectChatWindow {...defaultProps} onBlockUser={onBlockUser} onReport={onReport} />);
+
+    await act(async () => {
+      await user.click(screen.getByRole('button', { name: 'Block user' }));
+      await user.click(screen.getByRole('button', { name: 'Report chat' }));
+    });
+
+    expect(onBlockUser).toHaveBeenCalledWith(baseConversation.participant);
+    expect(onReport).toHaveBeenCalledWith({ reportedUserId: 'user-2', type: 'user' });
+  });
+
+  test('shows encrypted demo state and sends ciphertext when enabled', async () => {
+    const user = userEvent.setup();
+
+    render(<DirectChatWindow {...defaultProps} conversation={{ ...baseConversation, encryptedModeEnabled: true }} />);
+
+    expect(screen.getByText('Encrypted demo: localStorage key, not production E2EE')).toBeInTheDocument();
+
+    await act(async () => {
+      await user.type(screen.getByLabelText('Direct message'), 'private note');
+      await user.click(screen.getByRole('button', { name: 'Send direct message' }));
+    });
+
+    expect(mockEncryptDemoMessage).toHaveBeenCalledWith('conversation-1', 'private note');
+    expect(defaultProps.sendMessage).toHaveBeenCalledWith(
+      'ciphertext-only',
+      null,
+      null,
+      expect.objectContaining({
+        encryptionMetadata: expect.objectContaining({ algorithm: 'AES-GCM' }),
+        isEncrypted: true
+      })
+    );
   });
 });

@@ -91,6 +91,30 @@ const messageSchema = new Schema(
       default: 'sent',
       required: true
     },
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true
+    },
+    isEncrypted: {
+      type: Boolean,
+      default: false,
+      required: true
+    },
+    encryptionMetadata: {
+      algorithm: {
+        type: String,
+        default: ''
+      },
+      iv: {
+        type: String,
+        default: ''
+      },
+      demoWarning: {
+        type: String,
+        default: ''
+      }
+    },
     replyToMessageId: {
       type: Schema.Types.ObjectId,
       ref: 'Message',

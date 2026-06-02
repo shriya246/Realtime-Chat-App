@@ -8,14 +8,17 @@ const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const User = require('../models/User');
 const redisService = require('./redisService');
+const { isExpiredFilter } = require('./privacyService');
 const { forbiddenError, notFoundError, validationError } = require('../utils/errors');
 
 const DIRECT_MESSAGE_PLACEHOLDER = 'This message was deleted';
 const SUPPORTED_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const DEFAULT_CONVERSATION_SETTINGS = Object.freeze({
   archived: false,
+  locked: false,
   muted: false,
-  pinned: false
+  pinned: false,
+  unlockedUntil: null
 });
 
 /**
@@ -192,6 +195,9 @@ const formatDirectMessage = (message, currentUserId = null, clientMessageId = nu
     type: message.type,
     timestamp: message.timestamp instanceof Date ? message.timestamp.toISOString() : message.timestamp,
     status: resolveMessageStatus(message, currentUserId),
+    expiresAt: message.expiresAt ? message.expiresAt.toISOString() : null,
+    isEncrypted: Boolean(message.isEncrypted),
+    encryptionMetadata: message.encryptionMetadata || null,
     editedAt: message.editedAt ? message.editedAt.toISOString() : null,
     deletedAt: message.deletedAt ? message.deletedAt.toISOString() : null,
     attachments: message.attachments?.length > 0
@@ -245,8 +251,10 @@ const getConversationSettingsForUser = (conversation, userId) => {
     ...(setting
       ? {
           archived: Boolean(setting.archived),
+          locked: Boolean(setting.locked),
           muted: Boolean(setting.muted),
           pinned: Boolean(setting.pinned),
+          unlockedUntil: setting.unlockedUntil instanceof Date ? setting.unlockedUntil.toISOString() : setting.unlockedUntil,
           updatedAt: setting.updatedAt instanceof Date ? setting.updatedAt.toISOString() : setting.updatedAt
         }
       : {})
@@ -265,6 +273,7 @@ const countUnreadMessages = async (conversationId, userId) =>
     conversationId,
     senderId: { $ne: userId },
     isDeleted: { $ne: true },
+    ...isExpiredFilter(),
     readBy: { $not: { $elemMatch: { userId } } }
   });
 
@@ -301,6 +310,8 @@ const formatConversation = async (conversation, currentUserId, onlineUserIds = n
     lastMessagePreview: conversation.lastMessagePreview || getMessagePreview(lastMessage),
     lastMessageTimestamp: conversation.lastMessageAt ? conversation.lastMessageAt.toISOString() : null,
     settings: getConversationSettingsForUser(conversation, currentUserId),
+    disappearingMode: conversation.disappearingMode || 'off',
+    encryptedModeEnabled: Boolean(conversation.encryptedModeEnabled),
     unreadCount: await countUnreadMessages(conversation._id, currentUserId),
     updatedAt: conversation.updatedAt ? conversation.updatedAt.toISOString() : null
   };
@@ -459,6 +470,7 @@ const markConversationRead = async (conversationId, userId) => {
     conversationId,
     senderId: { $ne: userId },
     isDeleted: { $ne: true },
+    ...isExpiredFilter(),
     readBy: { $not: { $elemMatch: { userId } } }
   }).select('_id');
   const messageIds = unreadMessages.map((message) => message._id);

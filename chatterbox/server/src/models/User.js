@@ -7,6 +7,8 @@ const mongoose = require('mongoose');
 
 const { getConfig } = require('../config');
 
+const PRIVACY_VISIBILITY_VALUES = ['everyone', 'contacts', 'nobody'];
+
 const userSchema = new mongoose.Schema(
   {
     username: {
@@ -43,6 +45,48 @@ const userSchema = new mongoose.Schema(
       ref: 'Attachment',
       default: null
     },
+    isAdmin: {
+      type: Boolean,
+      default: false,
+      required: true
+    },
+    privacySettings: {
+      lastSeenVisibility: {
+        type: String,
+        enum: PRIVACY_VISIBILITY_VALUES,
+        default: 'everyone'
+      },
+      onlineVisibility: {
+        type: String,
+        enum: PRIVACY_VISIBILITY_VALUES,
+        default: 'everyone'
+      },
+      readReceipts: {
+        type: Boolean,
+        default: true
+      },
+      profilePhotoVisibility: {
+        type: String,
+        enum: PRIVACY_VISIBILITY_VALUES,
+        default: 'everyone'
+      },
+      aboutVisibility: {
+        type: String,
+        enum: PRIVACY_VISIBILITY_VALUES,
+        default: 'everyone'
+      }
+    },
+    blockedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      }
+    ],
+    lockedChatPinHash: {
+      type: String,
+      default: null,
+      select: true
+    },
     passwordHash: {
       type: String,
       required: true,
@@ -63,6 +107,7 @@ const userSchema = new mongoose.Schema(
         delete returnedObject._id;
         delete returnedObject.__v;
         delete returnedObject.passwordHash;
+        delete returnedObject.lockedChatPinHash;
         return returnedObject;
       }
     },
@@ -115,6 +160,20 @@ userSchema.methods.comparePassword = async function comparePassword(candidatePas
   } catch (error) {
     throw error;
   }
+};
+
+/**
+ * Compares a local locked-chat PIN with the stored bcrypt hash.
+ *
+ * @param {string} candidatePin - Plain-text PIN supplied by the user.
+ * @returns {Promise<boolean>} True when the PIN matches.
+ */
+userSchema.methods.compareLockedChatPin = async function compareLockedChatPin(candidatePin) {
+  if (!this.lockedChatPinHash) {
+    return false;
+  }
+
+  return bcrypt.compare(candidatePin, this.lockedChatPinHash);
 };
 
 module.exports = mongoose.model('User', userSchema);

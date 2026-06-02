@@ -6,7 +6,7 @@ const mongoose = require('mongoose');
 
 const Attachment = require('../models/Attachment');
 const User = require('../models/User');
-const { notFoundError, validationError } = require('../utils/errors');
+const { forbiddenError, notFoundError, validationError } = require('../utils/errors');
 
 const DEFAULT_USER_SEARCH_LIMIT = 20;
 
@@ -45,6 +45,8 @@ const searchUsers = async (req, res, next) => {
         }
       : {};
 
+    const currentUser = await User.findById(req.user.id).select('blockedUsers');
+    const blockedIds = new Set((currentUser.blockedUsers || []).map((blockedUserId) => blockedUserId.toString()));
     const users = await User.find(query)
       .select('-passwordHash')
       .limit(DEFAULT_USER_SEARCH_LIMIT)
@@ -53,7 +55,9 @@ const searchUsers = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: {
-        users: users.map((user) => formatUserProfile(user))
+        users: users
+          .filter((user) => !blockedIds.has(user.id))
+          .map((user) => formatUserProfile(user))
       }
     });
   } catch (error) {
@@ -141,9 +145,94 @@ const updateCurrentUser = async (req, res, next) => {
   }
 };
 
+const updatePrivacySettings = async (req, res, next) => {
+  try {
+    const allowedVisibility = new Set(['everyone', 'contacts', 'nobody']);
+    const updates = {};
+
+    ['lastSeenVisibility', 'onlineVisibility', 'profilePhotoVisibility', 'aboutVisibility'].forEach((field) => {
+      if (req.body[field] !== undefined) {
+        if (!allowedVisibility.has(req.body[field])) {
+          throw validationError('Invalid privacy visibility value.', [
+            { field, message: 'Use everyone, contacts, or nobody.' }
+          ]);
+        }
+        updates[`privacySettings.${field}`] = req.body[field];
+      }
+    });
+
+    if (req.body.readReceipts !== undefined) {
+      updates['privacySettings.readReceipts'] = Boolean(req.body.readReceipts);
+    }
+
+    const user = await User.findByIdAndUpdate(req.user.id, { $set: updates }, { new: true });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: formatUserProfile(user)
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const blockUser = async (req, res, next) => {
+  try {
+    if (req.params.id === req.user.id) {
+      return next(forbiddenError('You cannot block yourself.'));
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) {
+      return next(notFoundError('User not found.'));
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $addToSet: { blockedUsers: target._id } },
+      { new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        blockedUserId: target.id,
+        user: formatUserProfile(user)
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const unblockUser = async (req, res, next) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $pull: { blockedUsers: req.params.id } },
+      { new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        blockedUserId: req.params.id,
+        user: formatUserProfile(user)
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
+  blockUser,
   formatUserProfile,
   getUserById,
   searchUsers,
+  unblockUser,
+  updatePrivacySettings,
   updateCurrentUser
 };

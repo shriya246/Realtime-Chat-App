@@ -8,9 +8,9 @@
 | --- | --- |
 | Developer | Shriya Patel |
 | Product | ChatterBox - real-time portfolio chat application |
-| Delivery period | Six v1 sprints completed on 2026-05-24 and 2026-05-25; v2.0 direct messaging and v2.5 media/profile upgrades completed on 2026-05-31 |
-| Delivered system | React/Nginx client, Node.js API and Socket.io engine, direct conversations, room chat, local media uploads, voice notes, notifications, profiles, MongoDB persistence, Redis cache/presence, local no-op event publishing with optional Azure, Docker deployment, and CI |
-| Verification | 49 backend tests with enforced 80% coverage, 19 frontend tests, production build, and healthy Docker smoke test |
+| Delivery period | Six v1 sprints completed on 2026-05-24 and 2026-05-25; v2.0 direct messaging and v2.5 media/profile upgrades completed on 2026-05-31; v3.0 privacy/group upgrade completed on 2026-06-02 |
+| Delivered system | React/Nginx client, Node.js API and Socket.io engine, direct conversations, managed groups, local media uploads, voice notes, notifications, profiles, privacy settings, locked chats, disappearing messages, local reports, MongoDB persistence, Redis cache/presence, local no-op event publishing with optional Azure, Docker deployment, and CI |
+| Verification | 61 backend tests, 25 frontend tests, production build, and Docker smoke support |
 
 ### Key Engineering Decisions
 
@@ -26,6 +26,50 @@
 - Redis caching needs explicit invalidation when authorization-affecting membership state changes.
 - Connection recovery is a user-visible feature: bounded queued state gives clear feedback without persisting unsent content.
 - Container health gates turn infrastructure ordering into a repeatable, testable deployment behavior.
+
+## Sprint 9 - v3.0.0 Privacy, Groups, Moderation, and Encryption Demo
+
+| Field | Detail |
+| --- | --- |
+| Date | 2026-06-02 |
+| Goal | Upgrade ChatterBox to v3.0.0 with privacy controls, WhatsApp-style group management, moderation, disappearing messages, locked chats, and a client-side encryption demo. |
+| Process phase | Backend implementation, frontend implementation, testing, documentation, and versioning |
+| Status | Completed |
+
+### Deliverables Completed
+
+- Set server and client package versions to `3.0.0`.
+- Enhanced rooms into managed groups with description, avatar reference, owner/admin/member roles, member add/remove, admin promote/demote, leave, delete, group settings, and group details UI.
+- Added invite-token flow with reset/revoke support and optional join approval requests.
+- Added group settings for admins-only sending, group-info edit permissions, disappearing messages, and whether new members can see recent history.
+- Added direct and group disappearing-message modes: `off`, `24h`, `7d`, and `90d`; messages store `expiresAt`, APIs filter expired messages, and a local server interval emits `message:expired`.
+- Added user block/unblock and local report creation with an admin-only moderation report list.
+- Added per-user locked-chat settings, bcrypt-hashed local PIN storage, and password/PIN unlock for protected direct-message history.
+- Added privacy settings for last seen, online status, read receipts, profile photo, and about visibility.
+- Added a browser Web Crypto client-side encryption demo for direct chats. Encrypted demo messages store ciphertext and metadata on the server while local demo keys stay in browser `localStorage`.
+- Added Socket.io events for group admin operations, disappearing/encryption settings, block/report, locked chats, and message expiry.
+- Preserved v1 room chat, v2 direct-message behavior, and v2.5 media/profile/notification features.
+- Added backend and frontend tests for v3 behavior and updated documentation, including `docs/PRIVACY_AND_SECURITY.md`.
+
+### Decisions Made
+
+- Keep all v3 behavior free/local/open-source/browser-native: MongoDB, Redis, local uploads, bcrypt, Socket.io, browser Notification API, browser MediaRecorder API, browser Web Crypto, and a local Node cleanup interval.
+- Document locked chats as web-app-level privacy rather than device or biometric security.
+- Treat encryption as a portfolio demo, not production-grade WhatsApp E2EE; no Signal protocol, secure key exchange, forward secrecy, or protected key storage is claimed.
+- Store reports locally in MongoDB and avoid paid moderation or identity providers.
+- Keep optional Azure Service Bus disabled by default through `EVENT_PUBLISHER=noop`.
+
+### Verification
+
+- Backend tests cover group admin authorization, add/remove/promote/demote, invite and join approval, disappearing-message filtering, block prevention, report creation/admin listing, locked-chat unlock flow, and encrypted ciphertext storage.
+- Frontend tests cover group details/admin UI, disappearing-message controls, block/report actions, locked-chat unlock UI, encrypted demo warning/send state, and privacy settings.
+- Latest local results: 61 backend tests passed across 10 suites with coverage above the 80% threshold; 25 frontend tests passed across 8 suites; client production build passed.
+
+### Review Notes
+
+- Disappearing-message cleanup runs in the Node server process. A multi-instance deployment would need coordinated scheduling or idempotent worker ownership.
+- Locked chats protect the app UI/history endpoint after logout/relock, but do not defend against a compromised active browser session.
+- Encryption demo keys live in `localStorage`, so this is intentionally not production E2EE.
 
 ## Sprint 8 - v2.5.0 Media Messaging, Profiles, and Chat Controls
 

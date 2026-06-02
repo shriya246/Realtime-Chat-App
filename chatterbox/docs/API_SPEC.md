@@ -2,7 +2,7 @@
 
 # API Specification
 
-> Version 2.5.0 adds WhatsApp-style one-to-one direct conversations, media messages, voice notes, profiles, notifications, read receipts, replies, reactions, edits, deletes, and chat settings. The current API reference is maintained in [API.md](API.md). This file remains as the detailed room-chat contract for the preserved v1 room feature set.
+> Version 3.0.0 keeps this preserved room-chat contract and adds managed groups, privacy settings, disappearing messages, locked chats, local reports, and an encryption demo. The current full API reference is maintained in [API.md](API.md).
 
 ## 1. Overview
 

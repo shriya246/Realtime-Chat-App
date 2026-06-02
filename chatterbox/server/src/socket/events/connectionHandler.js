@@ -20,7 +20,7 @@ const handleConnection = async (io, socket) => {
     const userRoom = `user:${socket.user.id}`;
     await socket.join(userRoom);
 
-    registerRoomHandlers(socket);
+    registerRoomHandlers(io, socket);
     registerMessageHandlers(io, socket);
     registerDirectMessageHandlers(io, socket);
 

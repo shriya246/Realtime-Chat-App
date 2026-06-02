@@ -87,7 +87,8 @@ const formatMessage = (message, clientMessageId = null) => {
     content: message.content,
     type: message.type,
     timestamp: message.timestamp instanceof Date ? message.timestamp.toISOString() : message.timestamp,
-    status: message.status
+    status: message.status,
+    expiresAt: message.expiresAt ? message.expiresAt.toISOString() : null
   };
 
   if (clientMessageId) {

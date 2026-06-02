@@ -4,6 +4,7 @@
 
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
+const User = require('../models/User');
 const {
   createOrGetDirectConversation,
   formatConversation,
@@ -13,7 +14,14 @@ const {
   markConversationRead,
   updateConversationSettings
 } = require('../services/conversationService');
-const { validationError } = require('../utils/errors');
+const {
+  LOCK_UNLOCK_DURATION_MS,
+  hashLockedChatPin,
+  isConversationUnlocked,
+  isExpiredFilter,
+  normalizeDisappearingMode
+} = require('../services/privacyService');
+const { forbiddenError, validationError } = require('../utils/errors');
 
 const DEFAULT_MESSAGE_LIMIT = 50;
 
@@ -106,8 +114,13 @@ const getConversationMessages = async (req, res, next) => {
     const limit = req.query.limit || DEFAULT_MESSAGE_LIMIT;
     const query = {
       conversationId: conversation._id,
-      hiddenFor: { $ne: req.user._id }
+      hiddenFor: { $ne: req.user._id },
+      ...isExpiredFilter()
     };
+
+    if (!isConversationUnlocked(conversation, req.user.id)) {
+      return next(forbiddenError('Unlock this chat before opening it.'));
+    }
 
     if (req.query.before) {
       query._id = { $lt: req.query.before };
@@ -155,6 +168,19 @@ const getConversationMessages = async (req, res, next) => {
  */
 const markConversationAsRead = async (req, res, next) => {
   try {
+    if (req.user.privacySettings?.readReceipts === false) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          conversationId: req.params.id,
+          messageIds: [],
+          readAt: null,
+          readerId: req.user.id,
+          readReceiptsDisabled: true
+        }
+      });
+    }
+
     const conversation = await getAccessibleConversation(req.params.id, req.user.id);
     const receipt = await markConversationRead(conversation.id, req.user.id);
 
@@ -184,6 +210,7 @@ const searchConversationMessages = async (req, res, next) => {
       content: new RegExp(escapedSearch, 'i'),
       hiddenFor: { $ne: req.user._id },
       isDeleted: { $ne: true },
+      ...isExpiredFilter(),
       type: 'text'
     })
       .sort({ _id: -1 })
@@ -210,7 +237,7 @@ const searchConversationMessages = async (req, res, next) => {
 };
 
 /**
- * Updates pinned, archived, and muted settings for the current user.
+ * Updates pinned, archived, muted, and locked settings for the current user.
  *
  * @param {object} req - Express request.
  * @param {object} res - Express response.
@@ -221,7 +248,7 @@ const updateSettings = async (req, res, next) => {
   try {
     const updates = {};
 
-    ['pinned', 'archived', 'muted'].forEach((field) => {
+    ['pinned', 'archived', 'muted', 'locked'].forEach((field) => {
       if (req.body[field] !== undefined) {
         updates[field] = req.body[field];
       }
@@ -229,7 +256,7 @@ const updateSettings = async (req, res, next) => {
 
     if (Object.keys(updates).length === 0) {
       return next(validationError('At least one setting must be supplied.', [
-        { field: 'settings', message: 'Provide pinned, archived, or muted.' }
+        { field: 'settings', message: 'Provide pinned, archived, muted, or locked.' }
       ]));
     }
 
@@ -248,11 +275,98 @@ const updateSettings = async (req, res, next) => {
   }
 };
 
+const setLockedChatPin = async (req, res, next) => {
+  try {
+    const pinHash = await hashLockedChatPin(req.body.pin);
+    const user = await User.findByIdAndUpdate(req.user.id, { lockedChatPinHash: pinHash }, { new: true });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: user.toJSON()
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const unlockConversation = async (req, res, next) => {
+  try {
+    const conversation = await getAccessibleConversation(req.params.id, req.user.id);
+    const user = await User.findById(req.user.id).select('+passwordHash +lockedChatPinHash');
+    const passwordMatches = req.body.password ? await user.comparePassword(req.body.password) : false;
+    const pinMatches = req.body.pin ? await user.compareLockedChatPin(req.body.pin) : false;
+
+    if (!passwordMatches && !pinMatches) {
+      return next(forbiddenError('Password or locked-chat PIN is required to unlock this chat.'));
+    }
+
+    const unlockedUntil = new Date(Date.now() + LOCK_UNLOCK_DURATION_MS);
+    const updatedConversation = await updateConversationSettings(conversation, req.user.id, {
+      unlockedUntil
+    });
+    const onlineUserIds = await getOnlineUserIds();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        conversation: await formatConversation(updatedConversation, req.user.id, onlineUserIds),
+        unlockedUntil: unlockedUntil.toISOString()
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateDisappearingMode = async (req, res, next) => {
+  try {
+    const conversation = await getAccessibleConversation(req.params.id, req.user.id);
+    conversation.disappearingMode = normalizeDisappearingMode(req.body.disappearingMode);
+    await conversation.save();
+    await conversation.populate('participants', 'username email displayName about avatarAttachmentId lastSeen');
+    await conversation.populate('lastMessageId');
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        conversation: await formatConversation(conversation, req.user.id, await getOnlineUserIds())
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const updateEncryptionMode = async (req, res, next) => {
+  try {
+    const conversation = await getAccessibleConversation(req.params.id, req.user.id);
+    conversation.encryptedModeEnabled = Boolean(req.body.enabled);
+    await conversation.save();
+    await conversation.populate('participants', 'username email displayName about avatarAttachmentId lastSeen');
+    await conversation.populate('lastMessageId');
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        conversation: await formatConversation(conversation, req.user.id, await getOnlineUserIds())
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   createDirectConversation,
   getConversationMessages,
   listConversations,
   markConversationAsRead,
   searchConversationMessages,
+  setLockedChatPin,
+  unlockConversation,
+  updateDisappearingMode,
+  updateEncryptionMode,
   updateSettings
 };

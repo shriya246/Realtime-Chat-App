@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAuth } from '../context/AuthContext';
 import api, { getApiErrorMessage } from '../services/api';
+import { decryptDemoMessage } from '../services/encryptionDemo';
 import useSocket from './useSocket';
 
 /**
@@ -50,11 +51,12 @@ const upsertMessage = (messages, nextMessage) => {
 /**
  * Manages state and socket actions for one selected direct conversation.
  *
- * @param {string|null} conversationId - Selected conversation id.
+ * @param {object|string|null} conversation - Selected conversation or id.
  * @param {Function} onConversationUpdated - Conversation-list update callback.
  * @returns {object} Direct-message state and actions.
  */
-const useDirectMessages = (conversationId, onConversationUpdated = () => undefined) => {
+const useDirectMessages = (conversation, onConversationUpdated = () => undefined) => {
+  const conversationId = typeof conversation === 'string' ? conversation : conversation?.id || null;
   const { user } = useAuth();
   const { isConnected, socket } = useSocket();
   const [messages, setMessages] = useState([]);
@@ -96,7 +98,7 @@ const useDirectMessages = (conversationId, onConversationUpdated = () => undefin
         const response = await api.get(`/conversations/${conversationId}/messages`);
 
         if (isActive) {
-          setMessages(response.data.data.messages);
+          setMessages(await Promise.all(response.data.data.messages.map((message) => decryptDemoMessage(conversationId, message))));
           setIsLoading(false);
           markAsRead();
         }
@@ -134,7 +136,9 @@ const useDirectMessages = (conversationId, onConversationUpdated = () => undefin
       }
 
       pendingByClientId.current.delete(message.clientMessageId);
-      setMessages((currentMessages) => upsertMessage(currentMessages, message));
+      decryptDemoMessage(conversationId, message).then((decryptedMessage) => {
+        setMessages((currentMessages) => upsertMessage(currentMessages, decryptedMessage));
+      });
 
       if (message.sender?.id !== user?.id) {
         markAsRead();
@@ -217,7 +221,7 @@ const useDirectMessages = (conversationId, onConversationUpdated = () => undefin
   }, [conversationId, markAsRead, onConversationUpdated, socket, user?.id]);
 
   const sendMessage = useCallback(
-    (content, replyToMessageId = null, attachment = null) => {
+    (content, replyToMessageId = null, attachment = null, options = {}) => {
       const trimmedContent = content.trim();
 
       if (!conversationId || !user || (!trimmedContent && !attachment)) {
@@ -246,6 +250,8 @@ const useDirectMessages = (conversationId, onConversationUpdated = () => undefin
         clientMessageId,
         content: optimisticMessage.content,
         conversationId,
+        encryptionMetadata: options.encryptionMetadata || null,
+        isEncrypted: Boolean(options.isEncrypted),
         replyToMessageId
       };
 

@@ -41,6 +41,7 @@ const Sidebar = ({
   onCreateRoom,
   onLogout,
   onOpenProfile = () => undefined,
+  onOpenPrivacy = () => undefined,
   onRequestNotifications = () => undefined,
   onSearchUsers = () => undefined,
   onSelectConversation = () => undefined,
@@ -166,7 +167,7 @@ const Sidebar = ({
       <header className="flex h-16 items-center justify-between border-b border-stroke px-4">
         <div>
           <h1 className="text-lg font-semibold text-ink">ChatterBox</h1>
-          <p className="text-xs text-muted">v2.5 media messaging</p>
+          <p className="text-xs text-muted">v3.0 privacy controls</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -319,6 +320,9 @@ const Sidebar = ({
         <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onOpenProfile} type="button">
           <UserRound className="h-4 w-4 shrink-0 text-muted" />
           <span className="truncate text-sm font-medium text-ink">{currentUser.displayName || currentUser.username}</span>
+        </button>
+        <button className="icon-button" onClick={onOpenPrivacy} type="button" aria-label="Privacy settings">
+          <LockKeyhole className="h-5 w-5" />
         </button>
         <button aria-label="Log out" className="icon-button" onClick={onLogout} title="Log out" type="button">
           <DoorOpen className="h-5 w-5" />

@@ -13,6 +13,7 @@ const redis = require('./config/redis');
 const authRoutes = require('./routes/authRoutes');
 const attachmentRoutes = require('./routes/attachmentRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
+const reportRoutes = require('./routes/reportRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const userRoutes = require('./routes/userRoutes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -90,6 +91,7 @@ app.use('/api/attachments', attachmentRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

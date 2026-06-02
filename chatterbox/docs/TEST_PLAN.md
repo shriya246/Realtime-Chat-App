@@ -1,10 +1,10 @@
-<!-- Purpose: Test strategy and test-case catalog for ChatterBox v2.5.0. -->
+<!-- Purpose: Test strategy and test-case catalog for ChatterBox v3.0.0. -->
 
 # Test Plan
 
 ## 1. Purpose
 
-This test plan defines how ChatterBox is validated across backend APIs, Socket.io workflows, React components, local storage behavior, runtime configuration, and deployment readiness. Version 2.5.0 extends the plan for media messages, voice notes, browser notifications, profile avatars, pinned/archived/muted chats, and conversation search while preserving v1 room chat and v2 direct messaging.
+This test plan defines how ChatterBox is validated across backend APIs, Socket.io workflows, React components, local storage behavior, runtime configuration, and deployment readiness. Version 3.0.0 extends the plan for group management, invite/join approval, disappearing messages, block/report flows, locked chats, privacy settings, and the client-side encryption demo while preserving v1 room chat, v2 direct messaging, and v2.5 media/profile features.
 
 ## 2. Test Objectives
 
@@ -17,6 +17,13 @@ This test plan defines how ChatterBox is validated across backend APIs, Socket.i
 - Verify pinned, archived, and muted chat settings.
 - Verify browser notification permission UI and muted-chat suppression logic.
 - Verify message search is scoped to authorized conversations.
+- Verify group owner/admin/member authorization and invite/join approval flows.
+- Verify disappearing messages are filtered and cleaned up locally.
+- Verify blocked users cannot send direct messages to blockers.
+- Verify reports are stored locally and admin-protected.
+- Verify locked chats require account password or local PIN.
+- Verify encrypted demo messages store ciphertext and render client demo state.
+- Verify privacy settings UI and read-receipt preference behavior.
 - Verify Docker Compose keeps MongoDB, Redis, and uploads local.
 
 ## 3. Test Tools
@@ -52,9 +59,9 @@ This test plan defines how ChatterBox is validated across backend APIs, Socket.i
 
 | Category | Scope |
 | --- | --- |
-| API integration tests | Auth, users, attachments, conversations, settings, search, rooms, and history. |
-| Socket integration tests | Authenticated connection, room chat, direct messages, receipts, reactions, edits, deletes, and settings/profile events. |
-| Component tests | Login, sidebar, direct chat window, message bubble, profile modal, and preserved room chat. |
+| API integration tests | Auth, users, privacy, block/report, attachments, conversations, settings, search, rooms/groups, and history. |
+| Socket integration tests | Authenticated connection, room chat, group admin events, direct messages, receipts, reactions, edits, deletes, and settings/profile/privacy events. |
+| Component tests | Login, sidebar, direct chat window, group details modal, privacy modal, message bubble, profile modal, and preserved room chat. |
 | Storage tests | Allowed upload, rejected dangerous upload, and participant-only file access. |
 | Browser API tests | Notification permission UI and MediaRecorder fallback/mocked behavior. |
 | Deployment smoke tests | Container health checks, local upload volume, and environment variable validation. |
@@ -85,6 +92,14 @@ This test plan defines how ChatterBox is validated across backend APIs, Socket.i
 | SETTINGS-001 | API | Pin/archive/mute conversation. | Conversation summary includes updated settings | Passed v2.5.0 |
 | SEARCH-001 | API | Search authorized conversation. | Matching text messages returned | Passed v2.5.0 |
 | SEARCH-002 | API | Search unauthorized conversation. | `403` authorization response | Passed v2.5.0 |
+| GROUP-001 | API | Group admin authorization. | Non-admin rejected; admin succeeds | Passed v3.0.0 |
+| GROUP-002 | API | Add/remove/promote/demote group members. | Member/admin arrays update correctly | Passed v3.0.0 |
+| GROUP-003 | API | Invite link and join approval flow. | Token joins or creates request; admin resolves | Passed v3.0.0 |
+| EXPIRE-001 | API/Worker | Disappearing message expiry filtering. | Expired messages hidden from history | Passed v3.0.0 |
+| BLOCK-001 | Socket/API | Block user prevents direct message. | Blocked sender receives error | Passed v3.0.0 |
+| REPORT-001 | API | Store local report and list as admin. | Report persisted; non-admin cannot list | Passed v3.0.0 |
+| LOCK-001 | API | Locked chat PIN/password flow. | History blocked until unlock succeeds | Passed v3.0.0 |
+| ENCRYPT-001 | Socket/API | Encrypted direct message stores ciphertext. | DB content is ciphertext with metadata | Passed v3.0.0 |
 | UI-001 | Frontend | Login page renders and shows auth errors. | Email/password fields and readable error | Passed |
 | UI-002 | Frontend | Conversation list renders. | Avatar, preview, timestamp, unread badge | Passed v2.0.0 |
 | UI-003 | Frontend | Direct chat opens and optimistic sending state renders. | Header/messages and sending indicator | Passed v2.0.0 |
@@ -95,6 +110,12 @@ This test plan defines how ChatterBox is validated across backend APIs, Socket.i
 | UI-008 | Frontend | Profile avatar rendering and save. | Avatar image shown; save payload includes file | Passed v2.5.0 |
 | UI-009 | Frontend | Pinned/muted/archive behavior. | Settings callbacks and archived grouping work | Passed v2.5.0 |
 | UI-010 | Frontend | Room chat remains accessible. | Existing room components still pass | Passed |
+| UI-011 | Frontend | Group details/admin UI. | Group settings and members render; save payload sent | Passed v3.0.0 |
+| UI-012 | Frontend | Disappearing message setting UI. | Direct-chat mode control invokes update callback | Passed v3.0.0 |
+| UI-013 | Frontend | Block/report UI. | Direct-chat buttons invoke block/report callbacks | Passed v3.0.0 |
+| UI-014 | Frontend | Locked chat unlock UI. | Messages hidden until unlock callback is used | Passed v3.0.0 |
+| UI-015 | Frontend | Encrypted conversation warning/state. | Demo warning appears and ciphertext send path is used | Passed v3.0.0 |
+| UI-016 | Frontend | Privacy settings modal. | Visibility/read-receipt payload saved | Passed v3.0.0 |
 | BUILD-001 | Frontend build | Compile React client for production. | Vite emits optimized assets | Required each release |
 | DEPLOY-001 | Deployment | Validate Docker Compose model. | Config resolves without errors | Required each release |
 | DEPLOY-002 | Deployment | Start full local stack. | Client, server, MongoDB, Redis healthy | Required each release |
@@ -133,17 +154,19 @@ Then verify:
 - Register/login works.
 - User search starts a direct chat.
 - Text, image/file/video/audio, and voice note sends work.
-- Read receipts, reply, reaction, edit, delete, search, pin/archive/mute, and notifications work.
+- Read receipts, reply, reaction, edit, delete, search, pin/archive/mute, privacy settings, locked chat, encrypted demo, block/report, and notifications work.
+- Group admin/member management, invite links, join approval, admins-only send mode, and disappearing modes work.
 - Rooms remain accessible from the Rooms tab.
 
 ## 10. Current Verification Summary
 
-Latest local verification during v2.5.0 implementation:
+Latest local verification during v3.0.0 implementation:
 
 | Suite | Result |
 | --- | --- |
-| Server Jest/Supertest/Socket.io/config tests | 49 tests passed across 9 suites, 81.75% statements and 81.65% lines |
-| Client React Testing Library tests | 19 tests passed across 6 suites |
+| Server Jest/Supertest/Socket.io/config tests | 61 tests passed across 10 suites, 80.59% statements and 80.25% lines |
+| Client React Testing Library tests | 25 tests passed across 8 suites |
+| Client production build | Passed with Vite optimized bundle |
 
 Client production build and Docker smoke should be rerun after documentation/version updates before final release tagging.
 
@@ -158,3 +181,5 @@ Client production build and Docker smoke should be rerun after documentation/ver
 | Redis state leaking between tests | Clear test-owned cache/presence state. |
 | Frontend tests coupled to styling | Assert semantic UI behavior and accessible controls first. |
 | Optional Azure dependency instability | Keep no-op default and mock/skip external queues in automated tests. |
+| Encryption demo mistaken for production E2EE | Document localStorage key storage and missing Signal-style key exchange in README and privacy docs. |
+| Locked chats treated as device security | Document as web-app-level privacy only; require password/PIN server validation for history access. |

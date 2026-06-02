@@ -7,6 +7,8 @@ import { useCallback, useEffect, useState } from 'react';
 import ChatWindow from '../components/ChatWindow';
 import CreateRoomModal from '../components/CreateRoomModal';
 import DirectChatWindow from '../components/DirectChatWindow';
+import GroupDetailsModal from '../components/GroupDetailsModal';
+import PrivacySettingsModal from '../components/PrivacySettingsModal';
 import ProfileModal from '../components/ProfileModal';
 import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
@@ -40,6 +42,8 @@ const ChatPage = () => {
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(true);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
+  const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
@@ -68,7 +72,7 @@ const ChatPage = () => {
       currentConversation?.id === conversation.id ? conversation : currentConversation
     );
   }, []);
-  const directMessageState = useDirectMessages(selectedConversation?.id || null, upsertConversation);
+  const directMessageState = useDirectMessages(selectedConversation, upsertConversation);
 
   /**
    * Fetches rooms currently visible to the authenticated user.
@@ -128,6 +132,16 @@ const ChatPage = () => {
     loadRooms();
     loadConversations();
   }, [loadConversations, loadRooms]);
+
+  useEffect(() => {
+    if (!isGroupDetailsOpen || !selectedRoom?.id) {
+      return;
+    }
+
+    api.get(`/rooms/${selectedRoom.id}`)
+      .then((response) => setSelectedRoom(response.data.data.room))
+      .catch((error) => setRoomError(getApiErrorMessage(error, 'Unable to load group details.')));
+  }, [isGroupDetailsOpen, selectedRoom?.id]);
 
   useEffect(() => {
     if (!socket) {
@@ -289,6 +303,84 @@ const ChatPage = () => {
     }
   };
 
+  const handleUnlockConversation = async (secret) => {
+    try {
+      const response = await api.post(`/conversations/${selectedConversation.id}/unlock`, {
+        password: secret,
+        pin: secret
+      });
+      upsertConversation(response.data.data.conversation);
+      return true;
+    } catch (error) {
+      setConversationError(getApiErrorMessage(error, 'Unable to unlock chat.'));
+      return false;
+    }
+  };
+
+  const handleToggleDisappearing = async (mode) => {
+    try {
+      const response = await api.patch(`/conversations/${selectedConversation.id}/disappearing`, {
+        disappearingMode: mode
+      });
+      upsertConversation(response.data.data.conversation);
+    } catch (error) {
+      setConversationError(getApiErrorMessage(error, 'Unable to update disappearing messages.'));
+    }
+  };
+
+  const handleToggleEncryption = async (enabled) => {
+    try {
+      const response = await api.patch(`/conversations/${selectedConversation.id}/encryption`, { enabled });
+      upsertConversation(response.data.data.conversation);
+    } catch (error) {
+      setConversationError(getApiErrorMessage(error, 'Unable to update encrypted demo mode.'));
+    }
+  };
+
+  const handleBlockUser = async (targetUser) => {
+    if (!targetUser?.id) {
+      return;
+    }
+
+    try {
+      await api.post(`/users/${targetUser.id}/block`);
+      setConversations((currentConversations) => currentConversations.filter((conversation) => conversation.participant?.id !== targetUser.id));
+      setSelectedConversation(null);
+      setIsMobileNavigationOpen(true);
+    } catch (error) {
+      setConversationError(getApiErrorMessage(error, 'Unable to block user.'));
+    }
+  };
+
+  const handleReport = async (payload) => {
+    try {
+      await api.post('/reports', payload);
+      setConversationError('');
+    } catch (error) {
+      setConversationError(getApiErrorMessage(error, 'Unable to create report.'));
+    }
+  };
+
+  const handleSavePrivacy = async (settings) => {
+    try {
+      const response = await api.patch('/users/me/privacy', settings);
+      updateUser(response.data.data.user);
+      setIsPrivacyOpen(false);
+    } catch (error) {
+      setConversationError(getApiErrorMessage(error, 'Unable to update privacy settings.'));
+    }
+  };
+
+  const handleSaveGroup = async (updates) => {
+    try {
+      const response = await api.patch(`/rooms/${selectedRoom.id}`, updates);
+      setSelectedRoom(response.data.data.room);
+      setRooms((currentRooms) => currentRooms.map((room) => (room.id === selectedRoom.id ? response.data.data.room : room)));
+    } catch (error) {
+      setRoomError(getApiErrorMessage(error, 'Unable to update group.'));
+    }
+  };
+
   const handleSaveProfile = async ({ about, avatarFile, displayName }) => {
     try {
       setIsSavingProfile(true);
@@ -340,6 +432,7 @@ const ChatPage = () => {
         }}
         onLogout={logout}
         onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenPrivacy={() => setIsPrivacyOpen(true)}
         onRequestNotifications={handleRequestNotifications}
         onSearchUsers={handleSearchUsers}
         onSelectConversation={(conversation) => {
@@ -376,6 +469,12 @@ const ChatPage = () => {
             setSelectedConversation(null);
             setIsMobileNavigationOpen(true);
           }}
+          onBlockUser={handleBlockUser}
+          onLockChat={() => handleUpdateConversationSettings(selectedConversation, { locked: true })}
+          onReport={handleReport}
+          onToggleDisappearing={handleToggleDisappearing}
+          onToggleEncryption={handleToggleEncryption}
+          onUnlockChat={handleUnlockConversation}
           reactToMessage={directMessageState.reactToMessage}
           retryMessage={directMessageState.retryMessage}
           searchMessages={directMessageState.searchMessages}
@@ -390,6 +489,7 @@ const ChatPage = () => {
           error={messageState.error}
           isLoading={messageState.isLoading}
           messages={messageState.messages}
+          onOpenGroupDetails={() => setIsGroupDetailsOpen(true)}
           onOpenNavigation={() => setIsMobileNavigationOpen(true)}
           room={selectedRoom}
           sendMessage={messageState.sendMessage}
@@ -410,6 +510,19 @@ const ChatPage = () => {
         isSaving={isSavingProfile}
         onClose={() => setIsProfileOpen(false)}
         onSave={handleSaveProfile}
+      />
+      <PrivacySettingsModal
+        currentUser={user}
+        isOpen={isPrivacyOpen}
+        onClose={() => setIsPrivacyOpen(false)}
+        onSave={handleSavePrivacy}
+      />
+      <GroupDetailsModal
+        currentUser={user}
+        isOpen={isGroupDetailsOpen}
+        onClose={() => setIsGroupDetailsOpen(false)}
+        onSave={handleSaveGroup}
+        room={selectedRoom}
       />
     </div>
   );

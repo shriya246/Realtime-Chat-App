@@ -1,4 +1,4 @@
-<!-- Purpose: MongoDB, Mongoose, Redis, and local upload schema reference for ChatterBox v2.5.0. -->
+<!-- Purpose: MongoDB, Mongoose, Redis, and local upload schema reference for ChatterBox v3.0.0. -->
 
 # Database Schema
 
@@ -6,7 +6,7 @@
 
 ChatterBox stores durable data in MongoDB with Mongoose schemas. Redis stores transient cache, presence, and token blacklist values. Local upload files are stored on disk under `UPLOAD_DIR`, while MongoDB stores their metadata in `attachments`.
 
-Version 2.5.0 preserves v1 room chat and v2 direct messaging while adding media messages, voice-note attachments, profile metadata, avatars, per-user conversation settings, and scoped message search.
+Version 3.0.0 preserves v1 room chat, v2 direct messaging, and v2.5 media/profile features while adding group roles, invite/join approval state, disappearing messages, block/report records, locked-chat settings, privacy settings, and a basic client-side encryption demo.
 
 ## 2. Common Conventions
 
@@ -31,6 +31,10 @@ Collection name: `users`
 | `about` | String | No | No | Short profile status/about text. |
 | `avatarAttachmentId` | ObjectId | No | No | References an avatar attachment. |
 | `lastSeen` | Date | No | No | Last known disconnect or activity timestamp. |
+| `isAdmin` | Boolean | Yes | No | Enables access to the local moderation report list. |
+| `privacySettings` | Object | Yes | No | Last seen, online, read receipt, profile photo, and about visibility controls. |
+| `blockedUsers` | ObjectId[] | No | No | Users blocked by this account. |
+| `lockedChatPinHash` | String | No | No | bcrypt hash for local locked-chat PIN unlock. |
 | `createdAt`, `updatedAt` | Date | Yes | No | Mongoose timestamps. |
 
 Indexes:
@@ -40,6 +44,17 @@ Indexes:
 | `{ email: 1 }` unique | Fast login lookup and duplicate prevention. |
 | `{ username: 1 }` unique | Fast profile lookup and duplicate prevention. |
 | `{ username: "text", email: "text" }` | User search. |
+| `{ blockedUsers: 1 }` | Block checks and user search filtering. |
+
+Privacy settings:
+
+| Field | Type | Values |
+| --- | --- | --- |
+| `lastSeenVisibility` | String | `everyone`, `contacts`, `nobody` |
+| `onlineVisibility` | String | `everyone`, `contacts`, `nobody` |
+| `readReceipts` | Boolean | `true` or `false` |
+| `profilePhotoVisibility` | String | `everyone`, `contacts`, `nobody` |
+| `aboutVisibility` | String | `everyone`, `contacts`, `nobody` |
 
 API shape:
 
@@ -124,6 +139,8 @@ Direct conversations always contain exactly two unique users. `participantKey` i
 | `lastMessagePreview` | String | No | Denormalized preview for fast list display. |
 | `lastMessageAt` | Date | No | Timestamp used for conversation ordering. |
 | `settings` | Array | No | Per-user pinned, archived, and muted state. |
+| `disappearingMode` | String enum | Yes | `off`, `24h`, `7d`, or `90d`. |
+| `encryptedModeEnabled` | Boolean | Yes | Enables the client-side encryption demo UI/state. |
 | `createdBy` | ObjectId | Yes | User who first opened the direct conversation. |
 | `createdAt`, `updatedAt` | Date | Yes | Mongoose timestamps. |
 
@@ -135,6 +152,8 @@ Settings subdocument:
 | `pinned` | Boolean | Pins the chat above non-pinned chats for that user. |
 | `archived` | Boolean | Moves the chat to archived section for that user. |
 | `muted` | Boolean | Suppresses browser notifications for that user. |
+| `locked` | Boolean | Hides/requires unlock for this user's chat view. |
+| `unlockedUntil` | Date | Short-lived unlock expiry after password/PIN validation. |
 | `updatedAt` | Date | Last settings update. |
 
 Indexes:
@@ -156,6 +175,14 @@ Collection name: `rooms`
 | `type` | String enum | Yes | `public` or `private`. |
 | `members` | ObjectId[] | Yes | References to users allowed in the room. |
 | `createdBy` | ObjectId | Yes | User who created the room. |
+| `description` | String | No | Group description shown in details. |
+| `avatarAttachmentId` | ObjectId | No | Optional group avatar attachment. |
+| `ownerId` | ObjectId | Yes | Group owner with delete/admin authority. |
+| `admins` | ObjectId[] | Yes | Group admins with member/settings authority. |
+| `settings` | Object | Yes | Group send/edit/history/join/disappearing controls. |
+| `inviteToken` | String | No | Private invite token when generated. |
+| `inviteRevokedAt` | Date | No | Timestamp for revoked/reset invite links. |
+| `joinRequests` | Array | No | Pending/approved/rejected join approval records. |
 | `createdAt`, `updatedAt` | Date | Yes | Mongoose timestamps. |
 
 Indexes:
@@ -165,6 +192,27 @@ Indexes:
 | `{ name: 1, type: 1 }` | Room search and filtering. |
 | `{ members: 1 }` | Fast lookup for rooms visible to a user. |
 | `{ createdBy: 1 }` | Creator-based room queries. |
+| `{ inviteToken: 1 }` | Invite-link lookup. |
+
+Group settings:
+
+| Field | Type | Values |
+| --- | --- | --- |
+| `whoCanSendMessages` | String | `everyone` or `admins` |
+| `whoCanEditInfo` | String | `everyone` or `admins` |
+| `newMembersCanSeeRecentHistory` | Boolean | Enables last-50-history visibility after joining. |
+| `joinApprovalRequired` | Boolean | Converts invite joins into admin-approved requests. |
+| `disappearingMode` | String | `off`, `24h`, `7d`, or `90d` |
+
+Join request subdocument:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `userId` | ObjectId | User requesting access. |
+| `status` | String | `pending`, `approved`, or `rejected`. |
+| `requestedAt` | Date | Request timestamp. |
+| `resolvedAt` | Date | Approval/rejection timestamp. |
+| `resolvedBy` | ObjectId | Admin who resolved the request. |
 
 ## 7. Message Collection
 
@@ -189,6 +237,9 @@ Collection name: `messages`
 | `deletedAt` | Date | No | Set when the sender deletes for everyone. |
 | `isDeleted` | Boolean | Yes | Soft-delete flag. |
 | `hiddenFor` | ObjectId[] | No | Optional per-user hidden state for future delete-for-me behavior. |
+| `expiresAt` | Date | No | Expiry timestamp for disappearing messages. |
+| `isEncrypted` | Boolean | Yes | True when content is client-side encryption demo ciphertext. |
+| `encryptionMetadata` | Object | No | Demo algorithm/IV/warning metadata. |
 | `createdAt`, `updatedAt` | Date | Yes | Mongoose timestamps. |
 
 Reaction subdocument:
@@ -217,6 +268,15 @@ Indexes:
 | `{ conversationId: 1, content: "text" }` | Conversation-scoped text search support. |
 | `{ senderId: 1, timestamp: -1 }` | Sender activity queries. |
 | `{ "readBy.userId": 1 }` | Unread count and receipt queries. |
+| `{ expiresAt: 1 }` | Expiring-message filtering and cleanup worker queries. |
+
+Encryption metadata:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `algorithm` | String | Demo algorithm, currently `AES-GCM` when Web Crypto is available. |
+| `iv` | String | Base64 IV used by the client for demo decryption. |
+| `demoWarning` | String | Stored reminder that this is not production E2EE. |
 
 Direct media message shape:
 
@@ -241,27 +301,61 @@ Direct media message shape:
     }
   ],
   "status": "delivered",
+  "expiresAt": null,
+  "isEncrypted": false,
+  "encryptionMetadata": null,
   "timestamp": "2026-05-31T18:30:00.000Z"
 }
 ```
 
-## 8. Relationships
+## 8. Report Collection
+
+Collection name: `reports`
+
+Reports are local MongoDB records. No external moderation API is called.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `_id` | ObjectId | Yes | MongoDB primary key. |
+| `type` | String enum | Yes | `user` or `message`. |
+| `reporterId` | ObjectId | Yes | User who created the report. |
+| `reportedUserId` | ObjectId | No | User being reported. |
+| `messageId` | ObjectId | No | Message being reported. |
+| `conversationId` | ObjectId | No | Direct conversation context. |
+| `roomId` | ObjectId | No | Room/group context. |
+| `reason` | String | No | Local moderation note. |
+| `status` | String enum | Yes | `open`, `reviewed`, or `dismissed`. |
+| `createdAt`, `updatedAt` | Date | Yes | Mongoose timestamps. |
+
+Indexes:
+
+| Index | Purpose |
+| --- | --- |
+| `{ status: 1, createdAt: -1 }` | Moderation queue ordering. |
+| `{ reporterId: 1, createdAt: -1 }` | Reporter history lookup. |
+
+## 9. Relationships
 
 ```text
 User 1 --- many Room.members
 User 1 --- many Message.senderId
 User 1 --- many Attachment.ownerId
 User 1 --- many Conversation.settings.userId
+User 1 --- many User.blockedUsers
+User 1 --- many Report.reporterId
+User 1 --- many Report.reportedUserId
 Room 1 --- many Message.roomId
 User 1 --- many Room.createdBy
+User 1 --- many Room.ownerId/admins
 User 2 --- many Conversation.participants
 Conversation 1 --- many Message.conversationId
 Conversation 1 --- many Attachment.conversationId
 Message 1 --- many Message.replyToMessageId
 Message many --- many Attachment.attachments
+Message 1 --- many Report.messageId
 ```
 
-## 9. Redis Data Model
+## 10. Redis Data Model
 
 | Key | Value | Expiration |
 | --- | --- | --- |
@@ -270,7 +364,7 @@ Message many --- many Attachment.attachments
 | `blacklist:<token>` | `1` | Remaining JWT lifetime |
 | `typing:<roomId>:<userId>` | `1` | 3 seconds |
 
-## 10. Local File Storage
+## 11. Local File Storage
 
 | Path | Purpose |
 | --- | --- |
@@ -281,7 +375,7 @@ Message many --- many Attachment.attachments
 
 The storage service owns path generation and file validation. Route handlers and message logic use attachment IDs and protected URLs rather than filesystem paths.
 
-## 11. Data Integrity Rules
+## 12. Data Integrity Rules
 
 - A private room message can only be created by a room member.
 - A direct message can only be created by one of the two conversation participants.
@@ -291,4 +385,10 @@ The storage service owns path generation and file validation. Route handlers and
 - Read receipts, reactions, edits, deletes, settings, and searches are authorized server-side.
 - Only senders can edit text messages or delete their own direct messages for everyone.
 - Muted, pinned, and archived settings are per user and do not change the other participant's settings.
+- Locked chats are per user and unlock with a short-lived `unlockedUntil` value after account password or bcrypt-hashed local PIN validation.
+- Blocked users cannot send direct messages to the blocker.
+- Reports are stored locally and listed only for users with `isAdmin: true`.
+- Expired messages are filtered from APIs and socket history; the cleanup worker soft-deletes them and emits `message:expired`.
+- Encrypted demo messages store ciphertext in `content`; symmetric keys are generated and stored only by the browser demo client.
+- Group member/admin/owner actions are authorized server-side.
 - User deletion is not part of this release to keep message attribution stable.

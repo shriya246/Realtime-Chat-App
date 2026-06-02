@@ -4,6 +4,7 @@
 
 const Message = require('../../models/Message');
 const azureServiceBusService = require('../../services/azureServiceBusService');
+const { calculateExpiresAt, canRoomMemberSend } = require('../../services/privacyService');
 const redisService = require('../../services/redisService');
 const { forbiddenError, validationError } = require('../../utils/errors');
 const { emitSocketError, formatMessage, getAccessibleRoom } = require('../socketUtils');
@@ -59,12 +60,17 @@ const registerMessageHandlers = (io, socket) => {
       const room = await getAccessibleRoom(payload.roomId, socket.user.id);
       ensureJoinedRoom(socket, room.id);
 
+      if (!canRoomMemberSend(room, socket.user.id)) {
+        throw forbiddenError('Only group admins can send messages in this group.');
+      }
+
       const content = validateMessageContent(payload.content);
       const message = await Message.create({
         roomId: room._id,
         senderId: socket.user._id,
         content,
         type: 'text',
+        expiresAt: calculateExpiresAt(room.settings?.disappearingMode),
         status: 'delivered'
       });
 

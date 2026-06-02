@@ -20,6 +20,7 @@ const ChatWindow = ({
   error,
   isLoading,
   messages,
+  onOpenGroupDetails = () => undefined,
   onOpenNavigation,
   room,
   sendMessage,
@@ -102,6 +103,9 @@ const ChatWindow = ({
         <span className="hidden rounded-md border border-stroke bg-panel px-2.5 py-1 text-xs text-muted sm:inline-flex">
           {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Offline'}
         </span>
+        <button aria-label="Group details" className="icon-button" onClick={onOpenGroupDetails} type="button">
+          <Users className="h-4 w-4" />
+        </button>
       </header>
 
       {error && (

@@ -1,4 +1,4 @@
-<!-- Purpose: v2.5.0 deployment, environment, local storage, health-check, and troubleshooting guide for ChatterBox. -->
+<!-- Purpose: v3.0.0 deployment, environment, local storage, privacy, health-check, and troubleshooting guide for ChatterBox. -->
 
 # Deployment and Setup Guide
 
@@ -24,7 +24,7 @@ The base Compose file starts the client, server, MongoDB, Redis, and a named loc
 | Native development | Node.js `^20.19.0` or `>=22.12.0`, npm `>=10`, MongoDB, Redis |
 | Production deployment | Secure secret storage, accessible MongoDB and Redis, TLS/reverse proxy; optional cloud object storage only if a future adapter is added |
 
-No Cloudinary, Firebase Storage, S3 bucket, Twilio, SendGrid, Pusher, paid push provider, or paid recording service is needed.
+No Cloudinary, Firebase Storage, S3 bucket, Twilio, SendGrid, Pusher, paid push provider, paid moderation API, paid identity provider, paid scheduler, or paid recording service is needed.
 
 ## 3. Local Docker Quickstart
 
@@ -84,7 +84,7 @@ MAX_UPLOAD_FILE_SIZE_BYTES=10485760
 
 ## 5. Local File Storage
 
-v2.5.0 stores uploads on the local filesystem:
+v3.0.0 stores uploads on the local filesystem:
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ Docker Compose mounts the server upload directory through a named volume:
 server-uploads:/app/uploads
 ```
 
-The storage code is behind `storageService`, so future Azure Blob or S3 adapters can be added later. v2.5.0 does not require or configure cloud storage.
+The storage code is behind `storageService`, so future Azure Blob or S3 adapters can be added later. v3.0.0 does not require or configure cloud storage.
 
 ## 6. Runtime Environment Reference
 
@@ -159,6 +159,10 @@ The storage code is behind `storageService`, so future Azure Blob or S3 adapters
 | Notifications | Browser Notification API | Permission is requested from the UI only; muted chats suppress notifications. |
 | Voice notes | Browser `MediaRecorder` and microphone permission | Records audio locally in the browser and uploads it as an audio attachment. |
 | Media preview | Browser file/object URL support | Shows selected image/audio/video/file previews before send. |
+| Encryption demo | Browser Web Crypto and localStorage | Encrypts direct-message text in the browser for demo conversations; stores demo keys locally. |
+| Locked chats | Account password or local PIN | PIN hash is stored with bcrypt; unlock state is short-lived and per user. |
+| Disappearing messages | Server process interval | Local cleanup worker soft-deletes expired messages and emits `message:expired`. |
+| Reports | MongoDB | Reports are stored locally and visible only to admin users. |
 
 No server-side push provider or media transcription/processing API is required.
 
@@ -207,6 +211,9 @@ The live chat message is persisted before publication. A queue publish failure i
 | MongoDB | Compose `mongosh` health check | Ping succeeds |
 | Redis | Compose `redis-cli ping` health check | `PONG` |
 | Upload volume | Send an image/file message | Attachment metadata saved and file served to participants |
+| Disappearing worker | Send a message with short expiry in test/local config | Expired messages are filtered and soft-deleted by the server interval |
+| Locked chat | Lock and unlock a direct chat | History is blocked until password/PIN unlock succeeds |
+| Reports | Create a local report as a user, list as an admin | Report is stored in MongoDB; no external moderation call occurs |
 | Event publisher | Send a chat message with default config | Message accepted; publisher reports local no-op |
 
 The server returns HTTP `503` with `status: "degraded"` when required local MongoDB or Redis readiness is unavailable.
@@ -225,6 +232,9 @@ The server returns HTTP `503` with `status: "degraded"` when required local Mong
 | Attachment returns `403` | Signed-in user is not a conversation participant | Open/download only attachments from conversations the user belongs to. |
 | Browser notification never appears | Permission denied, tab focused, wrong conversation active, or chat muted | Re-enable browser permission and unmute the conversation. |
 | Voice recording unavailable | Browser lacks `MediaRecorder` or microphone permission is denied | Use a supported browser and allow microphone access. |
+| Locked chat will not open | Wrong account password/PIN or unlock expired | Re-enter the account password or reset the local PIN while signed in. |
+| Encrypted demo message cannot decrypt | The browser lacks the localStorage demo key | Re-share/regenerate the demo key manually for testing; this release does not implement secure key exchange. |
+| Expired messages still visible briefly | Cleanup interval has not run yet or client has cached view | Refresh history; APIs filter expired messages even before cleanup soft-delete. |
 | Browser reports CORS failure | Origin not in allowlist | Add the exact UI origin to `CORS_ALLOWED_ORIGINS` and restart. |
 | Socket authentication fails | Missing, expired, or revoked JWT | Sign in again and inspect handshake `auth.token`. |
 | Client calls old API domain | Vite values changed after build | Rebuild the client image with updated `VITE_*` values. |
@@ -238,4 +248,4 @@ The server returns HTTP `503` with `status: "degraded"` when required local Mong
 - Confirm `UPLOAD_DIR` persistence and backup policy for local media.
 - Run server tests, client tests, and the client production build.
 - Build images and validate health probes in the target environment.
-- Verify register/login, direct chat, media send, voice note, notifications, profile avatar, pin/archive/mute, search, and preserved room chat.
+- Verify register/login, direct chat, group management, invite/join approval, disappearing messages, block/report, locked chat, encrypted demo, media send, voice note, notifications, profile avatar, privacy settings, pin/archive/mute, search, and preserved room chat.

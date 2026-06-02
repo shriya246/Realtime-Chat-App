@@ -4,8 +4,14 @@
 
 const Message = require('../../models/Message');
 const Attachment = require('../../models/Attachment');
+const Report = require('../../models/Report');
 const User = require('../../models/User');
 const eventPublisher = require('../../services/azureServiceBusService');
+const {
+  assertDirectMessageNotBlocked,
+  calculateExpiresAt,
+  normalizeDisappearingMode
+} = require('../../services/privacyService');
 const {
   SUPPORTED_REACTIONS,
   formatConversation,
@@ -187,6 +193,7 @@ const registerDirectMessageHandlers = (io, socket) => {
   socket.on('direct_message:send', async (payload = {}, acknowledgement) => {
     try {
       const conversation = await getAccessibleConversation(payload.conversationId, socket.user.id);
+      await assertDirectMessageNotBlocked(socket.user.id, conversation.participants.map((participant) => toId(participant)));
       const attachment = await loadMessageAttachment(payload.attachmentId, conversation, socket.user.id);
       const messageType = attachment ? attachment.kind : 'text';
 
@@ -209,6 +216,9 @@ const registerDirectMessageHandlers = (io, socket) => {
         content,
         type: messageType,
         status: 'delivered',
+        expiresAt: calculateExpiresAt(conversation.disappearingMode),
+        isEncrypted: Boolean(payload.isEncrypted),
+        encryptionMetadata: payload.encryptionMetadata || null,
         attachments: attachment ? [attachment._id] : [],
         replyToMessageId: replyTarget?._id || null,
         deliveredTo: conversation.participants.map((participant) => ({
@@ -293,6 +303,18 @@ const registerDirectMessageHandlers = (io, socket) => {
 
   socket.on('message:read', async (payload = {}, acknowledgement) => {
     try {
+      if (socket.user.privacySettings?.readReceipts === false) {
+        const disabledReceipt = {
+          conversationId: payload.conversationId,
+          messageIds: [],
+          readAt: null,
+          readerId: socket.user.id,
+          readReceiptsDisabled: true
+        };
+        acknowledgement?.({ success: true, data: disabledReceipt });
+        return;
+      }
+
       const conversation = await getAccessibleConversation(payload.conversationId, socket.user.id);
       const receipt = await markConversationRead(conversation.id, socket.user.id);
 
@@ -437,11 +459,15 @@ const registerDirectMessageHandlers = (io, socket) => {
       const conversation = await getAccessibleConversation(payload.conversationId, socket.user.id);
       const updates = {};
 
-      ['pinned', 'archived', 'muted'].forEach((field) => {
+      ['pinned', 'archived', 'muted', 'locked'].forEach((field) => {
         if (payload[field] !== undefined) {
           updates[field] = Boolean(payload[field]);
         }
       });
+
+      if (payload.unlockedUntil !== undefined) {
+        updates.unlockedUntil = payload.unlockedUntil ? new Date(payload.unlockedUntil) : null;
+      }
 
       if (Object.keys(updates).length === 0) {
         throw validationError('At least one setting must be supplied.', [
@@ -515,6 +541,102 @@ const registerDirectMessageHandlers = (io, socket) => {
           }
         });
       }
+    } catch (error) {
+      emitSocketError(socket, error, acknowledgement);
+    }
+  });
+
+  socket.on('conversation:disappearing:update', async (payload = {}, acknowledgement) => {
+    try {
+      const conversation = await getAccessibleConversation(payload.conversationId, socket.user.id);
+      conversation.disappearingMode = normalizeDisappearingMode(payload.disappearingMode);
+      await conversation.save();
+      await conversation.populate('participants', 'username email displayName about avatarAttachmentId lastSeen');
+      await conversation.populate('lastMessageId');
+      await emitConversationUpdated(io, conversation);
+
+      if (typeof acknowledgement === 'function') {
+        acknowledgement({
+          success: true,
+          data: {
+            conversation: await formatConversation(conversation, socket.user.id, await getOnlineUserIds())
+          }
+        });
+      }
+    } catch (error) {
+      emitSocketError(socket, error, acknowledgement);
+    }
+  });
+
+  socket.on('conversation:encryption:update', async (payload = {}, acknowledgement) => {
+    try {
+      const conversation = await getAccessibleConversation(payload.conversationId, socket.user.id);
+      conversation.encryptedModeEnabled = Boolean(payload.enabled);
+      await conversation.save();
+      await conversation.populate('participants', 'username email displayName about avatarAttachmentId lastSeen');
+      await conversation.populate('lastMessageId');
+      await emitConversationUpdated(io, conversation);
+
+      if (typeof acknowledgement === 'function') {
+        acknowledgement({
+          success: true,
+          data: {
+            conversation: await formatConversation(conversation, socket.user.id, await getOnlineUserIds())
+          }
+        });
+      }
+    } catch (error) {
+      emitSocketError(socket, error, acknowledgement);
+    }
+  });
+
+  socket.on('user:block', async (payload = {}, acknowledgement) => {
+    try {
+      const targetUser = await User.findById(payload.userId);
+      if (!targetUser) {
+        throw notFoundError('User not found.');
+      }
+      if (targetUser.id === socket.user.id) {
+        throw validationError('You cannot block yourself.');
+      }
+      await User.findByIdAndUpdate(socket.user.id, { $addToSet: { blockedUsers: targetUser._id } });
+      const eventPayload = { blockedUserId: targetUser.id };
+      socket.emit('user:block', eventPayload);
+      acknowledgement?.({ success: true, data: eventPayload });
+    } catch (error) {
+      emitSocketError(socket, error, acknowledgement);
+    }
+  });
+
+  socket.on('report:create', async (payload = {}, acknowledgement) => {
+    try {
+      const report = await Report.create({
+        messageId: payload.messageId || null,
+        reason: String(payload.reason || '').trim().slice(0, 500),
+        reportedUserId: payload.reportedUserId || null,
+        reporterId: socket.user._id,
+        type: payload.messageId ? 'message' : 'user'
+      });
+      const eventPayload = { report: report.toJSON() };
+      socket.emit('report:create', eventPayload);
+      acknowledgement?.({ success: true, data: eventPayload });
+    } catch (error) {
+      emitSocketError(socket, error, acknowledgement);
+    }
+  });
+
+  socket.on('chat:locked', async (payload = {}, acknowledgement) => {
+    try {
+      const conversation = await getAccessibleConversation(payload.conversationId, socket.user.id);
+      const updatedConversation = await updateConversationSettings(conversation, socket.user.id, {
+        locked: Boolean(payload.locked),
+        unlockedUntil: null
+      });
+      const summary = await formatConversation(updatedConversation, socket.user.id, await getOnlineUserIds());
+      const eventPayload = { conversation: summary };
+      socket.emit('chat:locked', eventPayload);
+      socket.emit('conversation:updated', eventPayload);
+      acknowledgement?.({ success: true, data: eventPayload });
     } catch (error) {
       emitSocketError(socket, error, acknowledgement);
     }
