@@ -14,6 +14,7 @@ const DEFAULTS = Object.freeze({
   compressionThresholdBytes: 1024,
   jsonBodyLimit: '1mb',
   jwtExpiresIn: '1h',
+  maxUploadFileSizeBytes: 10 * 1024 * 1024,
   messageCacheTtlSeconds: 24 * 60 * 60,
   messageHistoryLimit: 50,
   mongoMaxPoolSize: 10,
@@ -24,8 +25,10 @@ const DEFAULTS = Object.freeze({
   redisDb: 0,
   redisHost: '127.0.0.1',
   redisPort: 6379,
+  eventPublisher: 'noop',
   serviceBusQueueName: 'chatterbox-messages',
-  shutdownTimeoutMs: 10000
+  shutdownTimeoutMs: 10000,
+  uploadDir: 'uploads'
 });
 
 /**
@@ -90,6 +93,21 @@ const parseOrigins = (rawOrigins) =>
   rawOrigins.split(',').map((origin) => origin.trim()).filter(Boolean);
 
 /**
+ * Reads the local or Azure event-publisher mode.
+ *
+ * @returns {string} Event publisher mode.
+ */
+const readEventPublisher = () => {
+  const publisher = readString('EVENT_PUBLISHER', DEFAULTS.eventPublisher).toLowerCase();
+
+  if (!['noop', 'azure'].includes(publisher)) {
+    throw new Error('EVENT_PUBLISHER must be either noop or azure.');
+  }
+
+  return publisher;
+};
+
+/**
  * Constructs a runtime configuration snapshot from environment values.
  *
  * @returns {object} Backend configuration snapshot.
@@ -149,7 +167,12 @@ const getConfig = () => {
     },
     serviceBus: {
       connectionString: readString('AZURE_SERVICE_BUS_CONNECTION_STRING'),
+      eventPublisher: readEventPublisher(),
       queueName: readString('AZURE_SERVICE_BUS_QUEUE_NAME', DEFAULTS.serviceBusQueueName)
+    },
+    media: {
+      maxFileSizeBytes: readInteger('MAX_UPLOAD_FILE_SIZE_BYTES', DEFAULTS.maxUploadFileSizeBytes, 1),
+      uploadDir: readString('UPLOAD_DIR', DEFAULTS.uploadDir)
     }
   };
 };
@@ -176,7 +199,7 @@ const validateConfig = (config = getConfig()) => {
       missingVariables.push('CORS_ALLOWED_ORIGINS');
     }
 
-    if (!config.serviceBus.connectionString) {
+    if (config.serviceBus.eventPublisher === 'azure' && !config.serviceBus.connectionString) {
       missingVariables.push('AZURE_SERVICE_BUS_CONNECTION_STRING');
     }
   }

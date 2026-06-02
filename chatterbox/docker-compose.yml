@@ -45,6 +45,7 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
       REDIS_TLS: ${REDIS_TLS:-false}
       REDIS_CLUSTER_NODES: ${REDIS_CLUSTER_NODES:-}
+      EVENT_PUBLISHER: ${EVENT_PUBLISHER:-noop}
       AZURE_SERVICE_BUS_CONNECTION_STRING: ${AZURE_SERVICE_BUS_CONNECTION_STRING:-}
       AZURE_SERVICE_BUS_QUEUE_NAME: ${AZURE_SERVICE_BUS_QUEUE_NAME:-chatterbox-messages}
       AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
@@ -54,6 +55,8 @@ services:
       MESSAGE_CACHE_TTL_SECONDS: ${MESSAGE_CACHE_TTL_SECONDS:-86400}
       JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1mb}
       COMPRESSION_THRESHOLD_BYTES: ${COMPRESSION_THRESHOLD_BYTES:-1024}
+      UPLOAD_DIR: ${UPLOAD_DIR:-uploads}
+      MAX_UPLOAD_FILE_SIZE_BYTES: ${MAX_UPLOAD_FILE_SIZE_BYTES:-10485760}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       SHUTDOWN_TIMEOUT_MS: ${SHUTDOWN_TIMEOUT_MS:-10000}
     ports:
@@ -64,6 +67,8 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - server-uploads:/app/uploads
     healthcheck:
       test:
         [
@@ -113,3 +118,4 @@ services:
 volumes:
   mongo-data:
   redis-data:
+  server-uploads:

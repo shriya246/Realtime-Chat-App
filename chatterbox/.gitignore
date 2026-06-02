@@ -13,3 +13,5 @@ client/dist/
 !.env.example
 *.log
 .DS_Store
+server/uploads/*
+!server/uploads/.gitkeep

@@ -8,15 +8,15 @@
 | --- | --- |
 | Developer | Shriya Patel |
 | Product | ChatterBox - real-time portfolio chat application |
-| Delivery period | Six structured sprints completed on 2026-05-24 and 2026-05-25 |
-| Delivered system | React/Nginx client, Node.js API and Socket.io engine, MongoDB persistence, Redis cache/presence, Azure Service Bus publication, Docker deployment, and CI |
-| Verification | 34 backend tests with enforced 80% coverage, 8 frontend tests, production build, Compose validation, image build, and healthy full-stack smoke test |
+| Delivery period | Six v1 sprints completed on 2026-05-24 and 2026-05-25; v2.0 direct messaging and v2.5 media/profile upgrades completed on 2026-05-31 |
+| Delivered system | React/Nginx client, Node.js API and Socket.io engine, direct conversations, room chat, local media uploads, voice notes, notifications, profiles, MongoDB persistence, Redis cache/presence, local no-op event publishing with optional Azure, Docker deployment, and CI |
+| Verification | 49 backend tests with enforced 80% coverage, 19 frontend tests, production build, and healthy Docker smoke test |
 
 ### Key Engineering Decisions
 
 - Store durable chat state in MongoDB while limiting Redis to expiring acceleration, presence, and JWT revocation data.
 - Use authenticated Socket.io rooms for live traffic and cursor-indexed REST retrieval for deeper history.
-- Publish accepted delivery events asynchronously to Azure Service Bus without making queue availability a data-loss risk for local live delivery.
+- Publish accepted delivery events through a local no-op publisher by default, with optional Azure Service Bus only when explicitly enabled.
 - Centralize configuration validation and require production secrets/integration endpoints before the API begins serving.
 - Ship a non-root API image and an Nginx-served static client with dependency health-gated Compose startup.
 
@@ -26,6 +26,88 @@
 - Redis caching needs explicit invalidation when authorization-affecting membership state changes.
 - Connection recovery is a user-visible feature: bounded queued state gives clear feedback without persisting unsent content.
 - Container health gates turn infrastructure ordering into a repeatable, testable deployment behavior.
+
+## Sprint 8 - v2.5.0 Media Messaging, Profiles, and Chat Controls
+
+| Field | Detail |
+| --- | --- |
+| Date | 2026-05-31 |
+| Goal | Upgrade ChatterBox to v2.5.0 with WhatsApp-style media messages, voice notes, notifications, profiles, pinned/archived/muted chats, and scoped search. |
+| Process phase | Backend implementation, frontend implementation, testing, documentation, and versioning |
+| Status | Completed |
+
+### Deliverables Completed
+
+- Set server and client package versions to `2.5.0`.
+- Added an `Attachment` model and local filesystem storage service for media metadata and bytes.
+- Added upload configuration with `UPLOAD_DIR` and `MAX_UPLOAD_FILE_SIZE_BYTES`, plus Docker `server-uploads` persistence.
+- Added protected attachment upload and content-serving endpoints with MIME allowlists, file-size checks, executable rejection, and participant-only access for message attachments.
+- Extended direct messages to support `text`, `image`, `video`, `file`, and `audio` message types with attachment metadata.
+- Added voice-note UI using the browser `MediaRecorder` API with start/stop/cancel/send flow, timer, preview, and fallback behavior.
+- Added browser Notification API permission control and notification dispatch for hidden-tab or inactive-conversation messages while respecting muted chats.
+- Added profile editing for `displayName`, `about`, and local avatar uploads; avatars render in the sidebar, chat header, messages, and profile modal with initials fallback.
+- Added per-user conversation settings for pinned, archived, and muted chats with sidebar controls and archived grouping.
+- Added conversation-scoped message search through a protected REST endpoint and direct chat search UI.
+- Added Socket.io handling for media messages, profile updates, and conversation settings updates.
+- Preserved v1 room chat and all v2.0 direct-message features.
+- Updated README, API, architecture, database schema, deployment, test plan, sprint log, environment examples, Docker Compose, and upload ignore rules.
+
+### Decisions Made
+
+- Use local filesystem storage for development and Docker Compose while hiding it behind a storage service abstraction for future cloud adapters.
+- Keep all new features free/local/browser-native: browser Notification API, browser MediaRecorder API, local uploads, MongoDB, Redis, and no paid media or push provider.
+- Keep Azure Service Bus optional and disabled by default with `EVENT_PUBLISHER=noop`.
+- Store per-user chat controls in the conversation document instead of creating a separate settings collection, keeping direct-chat list reads simple.
+- Scope message search to one authorized conversation and use safe MongoDB queries with limits rather than adding an external search service.
+
+### Verification
+
+- Backend tests cover allowed upload, disallowed upload, attachment authorization, profile update, chat settings, and message search authorization.
+- Existing backend tests still cover auth, rooms, direct conversations, unread counts, read receipts, reactions, and edit/delete authorization.
+- Frontend tests cover attachment preview/upload, voice recorder fallback, notification permission control, profile avatar rendering, pinned/muted/archive behavior, direct chat, reaction UI, reply preview, and preserved room chat components.
+- Latest local results: 49 backend tests passed across 9 suites with coverage above the 80% threshold; 19 frontend tests passed across 6 suites.
+
+### Review Notes
+
+- Uploaded media remains local to the server filesystem or Docker volume. Production deployments should back up that volume or replace the storage service with a future cloud adapter.
+- Browser notifications require the app to be open in the browser; web push service workers are outside v2.5.0.
+- Voice note capture depends on browser support for `MediaRecorder` and microphone permission.
+
+## Sprint 7 - v2.0.0 WhatsApp-Style Direct Messaging
+
+| Field | Detail |
+| --- | --- |
+| Date | 2026-05-31 |
+| Goal | Upgrade ChatterBox to v2.0.0 with one-to-one direct conversations and a WhatsApp-style chat experience while preserving room chat. |
+| Process phase | Product upgrade, backend implementation, frontend implementation, testing, and documentation |
+| Status | Completed |
+
+### Deliverables Completed
+
+- Set server and client package versions to `2.0.0`.
+- Added a `Conversation` model for exactly two participants with a unique sorted participant key to prevent duplicate direct chats.
+- Extended `Message` records for direct conversations, replies, reactions, delivered/read receipts, edited timestamps, soft delete, and optional per-user hidden state.
+- Added protected REST endpoints for direct conversation create/get, list, direct-message history, and mark-as-read.
+- Added Socket.io events for `direct_message:send`, `direct_message:new`, `message:delivered`, `message:read`, `message:reaction:update`, `message:edit`, `message:delete`, and `conversation:updated`.
+- Added server authorization so users can only read, join, send, react, edit, or delete messages in conversations they belong to.
+- Added a WhatsApp-style sidebar with direct conversations, avatar placeholders, previews, timestamps, unread badges, online indicators, people search, and a preserved Rooms tab.
+- Added a direct-chat window with optimistic sending states, failed-message retry, read receipt indicators, reply preview, quote scroll targeting, reaction picker, edit, and delete-for-everyone.
+- Kept Azure Service Bus optional behind `EVENT_PUBLISHER=azure` and made `EVENT_PUBLISHER=noop` the default local/free event publisher.
+- Updated README, API, architecture, schema, test plan, sprint log, environment examples, and Compose settings.
+
+### Decisions Made
+
+- Preserve room chat instead of replacing it; direct chats are the default v2 experience and rooms remain accessible through a separate sidebar tab.
+- Use MongoDB for durable direct conversation state and Redis only for presence, room history cache, and token blacklist state.
+- Compute unread counts from message read receipts so counts remain accurate even when multiple clients are open.
+- Use simple emoji reactions and existing Lucide/browser-native UI controls; no paid media, storage, notification, or real-time service was introduced.
+- Keep event publishing local and no-op by default so Docker Compose, tests, and CI remain free and self-contained.
+
+### Verification
+
+- Backend tests cover direct conversation creation, duplicate prevention, conversation listing, direct message send, unread counts, mark-as-read, reactions, and edit/delete authorization.
+- Frontend tests cover conversation list rendering, direct chat opening, optimistic sending state, reply preview, reaction UI, and preserved room chat components.
+- Full verification commands are recorded in the Test Plan and README.
 
 ## Sprint 1 - Project Foundation and Documentation
 
@@ -273,7 +355,7 @@
 ### Decisions Made
 
 - Apply HTTP security middleware in all runtime environments while requiring stricter integration values only for production startup.
-- Keep Service Bus optional for local Docker use, but require it for production to honor the reliable event-publication architecture.
+- Keep Service Bus optional in every environment and disabled by default; production can enable it only when the deployer intentionally provides Azure credentials.
 - Compile public API and Socket URLs into the client image through Vite build arguments.
 - Leave the verified Docker stack running locally at completion so the portfolio application can be reviewed immediately.
 

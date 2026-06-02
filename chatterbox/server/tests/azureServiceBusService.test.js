@@ -36,6 +36,7 @@ describe('Azure Service Bus service', () => {
     process.env = { ...originalEnvironment };
     delete process.env.AZURE_SERVICE_BUS_CONNECTION_STRING;
     delete process.env.AZURE_SERVICE_BUS_QUEUE_NAME;
+    delete process.env.EVENT_PUBLISHER;
     mockCreateSender.mockReturnValue({
       close: mockCloseSender,
       sendMessages: mockSendMessages
@@ -60,7 +61,7 @@ describe('Azure Service Bus service', () => {
 
     await expect(service.sendMessage({ id: 'message-1' })).resolves.toEqual({
       published: false,
-      reason: 'AZURE_SERVICE_BUS_NOT_CONFIGURED'
+      reason: 'LOCAL_NOOP_EVENT_PUBLISHER'
     });
     await expect(service.receiveMessages(jest.fn())).resolves.toBeNull();
     await expect(service.closeServiceBus()).resolves.toBeUndefined();
@@ -69,6 +70,7 @@ describe('Azure Service Bus service', () => {
   test('publishes, subscribes, and closes configured queue resources', async () => {
     process.env.AZURE_SERVICE_BUS_CONNECTION_STRING = 'Endpoint=sb://configured/';
     process.env.AZURE_SERVICE_BUS_QUEUE_NAME = 'messages';
+    process.env.EVENT_PUBLISHER = 'azure';
     const service = loadService();
     const message = {
       id: 'message-1',
@@ -96,6 +98,7 @@ describe('Azure Service Bus service', () => {
 
   test('reports publish failure without rejecting an already-delivered chat message', async () => {
     process.env.AZURE_SERVICE_BUS_CONNECTION_STRING = 'Endpoint=sb://configured/';
+    process.env.EVENT_PUBLISHER = 'azure';
     const service = loadService();
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
     mockSendMessages.mockRejectedValue(new Error('queue offline'));

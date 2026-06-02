@@ -58,6 +58,26 @@ const roomIdValidators = [
   validateRequest
 ];
 
+const attachmentIdValidators = [
+  param('id').isMongoId().withMessage('Attachment ID must be a valid ObjectId.'),
+  validateRequest
+];
+
+const conversationIdValidators = [
+  param('id').isMongoId().withMessage('Conversation ID must be a valid ObjectId.'),
+  validateRequest
+];
+
+const createDirectConversationValidators = [
+  body('targetUserId').isMongoId().withMessage('Target user ID must be a valid ObjectId.'),
+  validateRequest
+];
+
+const conversationListValidators = [
+  query('search').optional().isString().trim().isLength({ max: 100 }).withMessage('Search cannot exceed 100 characters.'),
+  validateRequest
+];
+
 const createRoomValidators = [
   body('name').isString().withMessage('Room name is required.').trim().isLength({ min: 1, max: 80 }).withMessage('Room name must be between 1 and 80 characters.'),
   body('type').optional().isIn(ROOM_TYPES).withMessage('Room type must be public or private.'),
@@ -85,6 +105,35 @@ const messageHistoryValidators = [
   validateRequest
 ];
 
+const directMessageHistoryValidators = [
+  param('id').isMongoId().withMessage('Conversation ID must be a valid ObjectId.'),
+  query('limit').optional().isInt({ min: 1, max: MAX_MESSAGE_HISTORY_LIMIT }).withMessage('Limit must be between 1 and 100.').toInt(),
+  query('before').optional().isMongoId().withMessage('Before cursor must be a valid ObjectId.'),
+  validateRequest
+];
+
+const messageSearchValidators = [
+  param('id').isMongoId().withMessage('Conversation ID must be a valid ObjectId.'),
+  query('q').isString().trim().isLength({ min: 1, max: 100 }).withMessage('Search query must be between 1 and 100 characters.'),
+  query('limit').optional().isInt({ min: 1, max: 50 }).withMessage('Limit must be between 1 and 50.').toInt(),
+  validateRequest
+];
+
+const conversationSettingsValidators = [
+  param('id').isMongoId().withMessage('Conversation ID must be a valid ObjectId.'),
+  body('pinned').optional().isBoolean().withMessage('Pinned must be true or false.').toBoolean(),
+  body('archived').optional().isBoolean().withMessage('Archived must be true or false.').toBoolean(),
+  body('muted').optional().isBoolean().withMessage('Muted must be true or false.').toBoolean(),
+  validateRequest
+];
+
+const updateProfileValidators = [
+  body('displayName').optional().isString().trim().isLength({ max: 60 }).withMessage('Display name cannot exceed 60 characters.'),
+  body('about').optional().isString().trim().isLength({ max: 160 }).withMessage('About cannot exceed 160 characters.'),
+  body('avatarAttachmentId').optional({ nullable: true }).isMongoId().withMessage('Avatar attachment ID must be valid.'),
+  validateRequest
+];
+
 const userListValidators = [
   query('search').optional().isString().trim().isLength({ max: 100 }).withMessage('Search cannot exceed 100 characters.'),
   validateRequest
@@ -97,12 +146,20 @@ const userIdValidators = [
 
 module.exports = {
   addMemberValidators,
+  attachmentIdValidators,
+  conversationIdValidators,
+  conversationListValidators,
+  conversationSettingsValidators,
   createRoomValidators,
+  createDirectConversationValidators,
+  directMessageHistoryValidators,
   loginValidators,
   messageHistoryValidators,
   registerValidators,
   roomIdValidators,
   roomListValidators,
+  messageSearchValidators,
+  updateProfileValidators,
   userIdValidators,
   userListValidators
 };

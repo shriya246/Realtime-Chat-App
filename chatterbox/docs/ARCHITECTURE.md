@@ -1,17 +1,20 @@
-<!-- Purpose: Final system architecture, data flow, security, caching, and deployment design for ChatterBox. -->
+<!-- Purpose: v2.5.0 system architecture, data flow, security, storage, notifications, and deployment design for ChatterBox. -->
 
 # System Architecture
 
 ## 1. Overview
 
-ChatterBox is a container-ready real-time chat system. A React single-page application is built by Vite and served by Nginx. Its REST and Socket.io traffic reaches a Node.js/Express server that owns authentication, authorization, room behavior, message persistence, live fan-out, caching, and queue publication. MongoDB is durable truth; Redis stores transient fast-access state; Azure Service Bus accepts downstream delivery events.
+ChatterBox is a container-ready real-time chat system. The React single-page app is built by Vite and served by Nginx. REST and Socket.io traffic reaches a Node.js/Express server that owns authentication, authorization, direct conversations, rooms, messages, local media storage, browser-notification decisions, profile updates, Redis-backed presence/cache, and optional event publication.
+
+MongoDB is durable truth. Redis stores transient state. Local filesystem storage stores uploads in development and Docker Compose. Event publishing defaults to a local no-op publisher. Azure Service Bus is optional and disabled unless `EVENT_PUBLISHER=azure` is explicitly configured.
 
 ## 2. Component Diagram
 
 ```text
                          Browser
+               React UI + Notification API + MediaRecorder
                             |
-                            | HTTP / WebSocket
+                            | HTTP / WebSocket / binary upload
                             v
                     +-------+--------+
                     | Nginx Client   |
@@ -23,67 +26,151 @@ ChatterBox is a container-ready real-time chat system. A React single-page appli
                     +-------v--------+
                     | Node.js Server |
                     | Express/Socket |
-                    +---+------+-----+
-                        |      | \
-               Mongoose |      |  \ delivery events
-                        |      |   \
-                   +----v--+ +-v-----+ +-------------------+
-                   |MongoDB| | Redis | | Azure Service Bus |
-                   +-------+ +-------+ +-------------------+
+                    +---+------+-----+----------+
+                        |      |                |
+               Mongoose |      |                | storage service
+                        |      |                |
+                   +----v--+ +-v-----+   +------v-------+
+                   |MongoDB| | Redis |   | Local uploads |
+                   +-------+ +-------+   +--------------+
+                        \
+                         \ optional delivery events
+                          v
+                   +-------------------+
+                   | Azure Service Bus |
+                   | only if enabled   |
+                   +-------------------+
 ```
 
 ## 3. Responsibilities
 
 | Component | Responsibility |
 | --- | --- |
-| Nginx client container | Serves optimized static files, immutable asset caching, health route, and SPA route fallback. |
-| React client | Manages authentication UI, rooms, messages, presence, typing, reconnect state, and queued outgoing messages. |
-| Express API | Validates REST requests and handles authentication, users, rooms, history pagination, health, and consistent errors. |
-| Socket.io engine | Authenticates handshakes, joins rooms, broadcasts messages/presence/typing, and responds with recent history. |
-| MongoDB/Mongoose | Persists users, rooms, and messages with indexes and schema validation. |
-| Redis/ioredis | Caches recent messages, tracks online users, and blacklists revoked JWTs. |
-| Azure Service Bus | Receives asynchronous delivery events after a message is accepted and persisted. |
+| React client | Auth UI, WhatsApp-style conversation list, direct chat, room chat, media previews, voice recording, notifications, profile modal, search, and mobile navigation. |
+| Browser APIs | `Notification` for local browser notifications and `MediaRecorder` for voice-note capture. |
+| Express API | Auth, users, attachments, conversations, settings, search, rooms, history, read receipts, health, and normalized errors. |
+| Socket.io engine | Authenticated live rooms, direct-message delivery, media-message events, receipts, reactions, edits, deletes, settings updates, profile updates, presence, and typing. |
+| MongoDB/Mongoose | Users, rooms, conversations, messages, attachment metadata, indexes, and schema validation. |
+| Redis/ioredis | Room recent-message cache, online users, and revoked JWT blacklist keys. |
+| Storage service | Validates and writes local uploads under `UPLOAD_DIR`; exposes an abstraction for future cloud adapters. |
+| Event publisher | Local no-op publisher by default; optional Azure publisher only with user-provided credentials. |
 
 ## 4. Technology Decisions
 
 | Technology | Decision rationale |
 | --- | --- |
-| React and Vite | Responsive component architecture with fast local workflow and optimized production builds. |
-| TailwindCSS | Consistent compact chat workspace styling across desktop and mobile layouts. |
-| Express | Mature middleware model for validation, security headers, logging, and REST resources. |
-| Socket.io | Authenticated rooms, acknowledgement callbacks, reconnection support, and browser compatibility. |
-| MongoDB and Mongoose | Natural document relationships for chat data with compound message history indexes. |
-| Redis | Low-latency expiring state for presence, recent history, and revoked access tokens. |
-| Azure Service Bus | Managed durable event boundary for notification, replay, auditing, or analytics workers. |
-| Docker Compose and Nginx | Reproducible topology and efficient production SPA delivery. |
+| React and Vite | Fast local workflow, component-level testability, and optimized production builds. |
+| TailwindCSS | Compact operational chat UI with consistent responsive styling. |
+| Express | Mature middleware model for validation, binary upload routing, security headers, and REST resources. |
+| Socket.io | Authenticated rooms, acknowledgements, reconnection support, and browser compatibility. |
+| MongoDB and Mongoose | Natural document relationships for chat, receipts, settings, and attachment metadata. |
+| Redis | Low-latency expiring state for presence, recent room history, and revoked access tokens. |
+| Local filesystem storage | Free local media storage in development and Compose, abstracted for later replacement. |
+| Browser APIs | Notifications and voice capture without paid push, recording, or media services. |
 
 ## 5. Authentication and Authorization
 
-1. Registration validates username, email, and password input.
-2. Mongoose hashes the password with bcrypt before storing the user.
-3. Login compares bcrypt hashes and signs a JWT from `JWT_SECRET`.
-4. The React session stores the token and sanitized user; Axios sends the bearer token.
-5. REST middleware verifies the token, rejects Redis-blacklisted tokens, and attaches the user.
-6. Socket.io accepts the token through the handshake, applies equivalent checks, and attaches the authenticated user to the socket.
-7. Logout stores a Redis blacklist key until the token's remaining expiration.
+1. Registration validates username, email, and password.
+2. Mongoose hashes the password with bcrypt.
+3. Login signs a JWT from `JWT_SECRET`.
+4. Axios sends the bearer token for REST.
+5. Socket.io receives the token through handshake `auth`.
+6. Middleware rejects missing, invalid, expired, revoked, or deleted-user tokens.
+7. Logout stores a Redis blacklist key until token expiry.
 
-Private rooms enforce member access for REST history and socket joins/messages. Public rooms remain visible and joinable to authenticated users.
+Authorization is enforced server-side:
 
-## 6. Message Delivery Flow
+- Private room access requires membership.
+- Direct conversation access requires one of the two participants.
+- Direct message send/read/search/history requires conversation membership.
+- Message edit/delete requires the sender.
+- Message reactions require membership and one reaction per user.
+- Attachment upload/download for messages requires conversation membership.
+- Avatar upload requires the owner to be authenticated.
+- Conversation settings are scoped per signed-in user.
+
+## 6. Direct and Media Message Flow
 
 ```text
-Client send_message
-  -> validate authenticated socket, room access, and content
-  -> persist Message in MongoDB
-  -> LPUSH serialized message into Redis messages:<roomId>
-  -> LTRIM bounded recent history and apply expiry
-  -> emit receive_message to active room sockets
-  -> publish delivery event to Azure Service Bus
+Client uploads file
+  -> POST /api/attachments with auth, Content-Type, X-File-Name
+  -> validate MIME, extension, size, purpose, and conversation membership
+  -> save bytes under UPLOAD_DIR
+  -> persist Attachment metadata in MongoDB
+  -> return attachment id and content URL
+
+Client direct_message:send
+  -> validate authenticated socket and conversation membership
+  -> if attachmentId is supplied, verify attachment ownership/access
+  -> persist Message with type text/image/video/file/audio
+  -> update Conversation last-message preview
+  -> emit direct_message:new to participant user rooms
+  -> emit media_message:new for media messages
+  -> emit conversation:updated with participant-specific unread counts
+  -> publish through noop or optional Azure publisher
 ```
 
-Queue publication occurs after persistence. A Service Bus error does not roll back or hide a message already delivered live; it produces a controlled server error log and a failed publication outcome for monitoring.
+Message types:
 
-## 7. History and Redis Strategy
+- `text`
+- `image`
+- `video`
+- `file`
+- `audio`
+
+Attachment metadata includes original filename, stored filename/path, MIME type, size, optional duration, optional width, and optional height. Deep media probing is intentionally avoided to keep the app local and dependency-light.
+
+## 7. Voice Notes
+
+Voice notes are audio attachments created by the browser:
+
+```text
+User starts recording
+  -> browser getUserMedia microphone permission
+  -> MediaRecorder captures chunks
+  -> timer updates in composer
+  -> user stops recording
+  -> audio/webm File preview appears
+  -> upload as purpose=message
+  -> send direct message with audio attachment
+```
+
+If `MediaRecorder` or microphone access is unavailable, the UI shows a fallback error and does not call any external recording service.
+
+## 8. Browser Notifications
+
+Notifications are purely browser-native:
+
+- Permission is requested only when the user clicks the notification control.
+- Notifications are shown for new direct messages when the tab is hidden or the user is not viewing that conversation.
+- Muted conversations suppress notifications.
+- Notifications are not web-push notifications and do not require Firebase, Push API servers, Twilio, SendGrid, or paid providers.
+
+## 9. Conversation Settings
+
+Conversation settings are stored per user inside the `Conversation.settings` array:
+
+- `pinned`: conversation appears above non-pinned conversations.
+- `archived`: conversation moves to the archived section.
+- `muted`: browser notifications are suppressed.
+
+Settings can be updated through REST or Socket.io and are returned in conversation summaries.
+
+## 10. Search
+
+Message search is scoped to one authorized direct conversation:
+
+```text
+GET /api/conversations/:id/search?q=needle&limit=20
+  -> verify membership
+  -> escape user query
+  -> search non-deleted text messages
+  -> return formatted direct-message results
+```
+
+The implementation uses MongoDB queries with safe limits. No paid search service is used.
+
+## 11. Redis Strategy
 
 | Redis key | Value | Expiration | Use |
 | --- | --- | --- | --- |
@@ -91,82 +178,62 @@ Queue publication occurs after persistence. A Service Bus error does not roll ba
 | `online:<userId>` | Presence JSON payload | `ONLINE_USER_TTL_SECONDS`, default 3600 seconds | Current online list and stale presence cleanup |
 | `blacklist:<token>` | Revocation marker | Remaining JWT lifetime | Immediate logout invalidation |
 
-When `join_room` is received, the server reads up to `MESSAGE_HISTORY_LIMIT` messages from Redis. A miss queries MongoDB and warms the bounded Redis list. When private-room membership changes, cached history is invalidated so access changes are reflected through an authoritative reload.
+Direct-message history, search, receipts, media metadata, and conversation settings are served from MongoDB, not Redis cache.
 
-`GET /api/rooms/:id/messages` provides longer history with an `_id` cursor. The indexed MongoDB query avoids page-offset scans and returns messages chronologically for rendering.
-
-## 8. Presence, Typing, and Resilience
-
-- On connection, an authenticated user is stored online in Redis and broadcast through `user_online`.
-- Multiple sockets for one user share an internal Socket.io room; the user goes offline only after the final socket disconnects.
-- Typing indicators are transient socket broadcasts with a three-second auto-clear timer.
-- The client reconnects with exponential backoff after transport loss.
-- The client queues up to 100 messages in memory while disconnected, marks them queued in the interface, and replays after successful reconnect and room rejoin.
-
-The outgoing queue intentionally is not persisted in browser storage, avoiding storage of unsent message content across sessions.
-
-## 9. Centralized Configuration and Security
-
-`server/src/config/index.js` owns parsing and validation of runtime configuration. Production startup fails early when `JWT_SECRET`, `MONGO_URI`, `CORS_ALLOWED_ORIGINS`, or `AZURE_SERVICE_BUS_CONNECTION_STRING` is absent.
-
-| Control | Implementation |
-| --- | --- |
-| Credential storage | Passwords hashed with bcrypt; JWT secret supplied only by environment/secret manager. |
-| Input safety | express-validator routes plus Mongoose schema constraints. |
-| HTTP protection | Helmet security headers, body-size limit, response compression, and CORS allowlist. |
-| Brute-force protection | Rate limiter on auth routes. |
-| Request visibility | Morgan method/status/latency logging without credential logging. |
-| Container privilege | API image runs under a dedicated non-root user. |
-| Browser delivery | Nginx static delivery with asset cache policy and SPA fallback. |
-
-## 10. Frontend Modules
+## 12. Frontend Modules
 
 ```text
 App
 |-- AuthProvider
-|   |-- LoginPage
-|   |-- RegisterPage
-|   `-- protected ChatPage
-`-- SocketProvider
-    `-- ChatPage
-        |-- Sidebar (rooms, presence, create room)
-        `-- ChatWindow (history, send, typing, delivery state)
+|-- SocketProvider
+`-- ChatPage
+    |-- Sidebar
+    |   |-- conversations, rooms, search, pin/mute/archive, notifications
+    |-- DirectChatWindow
+    |   |-- history, media composer, voice recorder, search, receipts
+    |-- ChatWindow
+    |   |-- preserved room chat
+    `-- ProfileModal
+        |-- display name, about, avatar upload
 ```
 
 | Module | Role |
 | --- | --- |
-| `AuthContext` | Restores, creates, and destroys authenticated sessions. |
+| `AuthContext` | Restores sessions and updates the stored signed-in profile. |
 | `SocketContext` | Owns authenticated real-time connection and reconnection state. |
-| `useMessages` | Room lifecycle, history/events, typing, optimistic sends, and queued replay. |
-| `useOnlineUsers` | Reduces online/offline events into visible presence state. |
-| `api.js` | Sets API URL, attaches JWT headers, and clears invalid sessions on `401`. |
+| `useMessages` | Preserved room lifecycle, history/events, typing, optimistic sends, and queued replay. |
+| `useDirectMessages` | Direct-message history, live events, media upload helper, read receipts, reactions, edit/delete, search, and retry. |
+| `Sidebar` | Conversation list, archived section, rooms tab, people search, notification button, and profile entry point. |
+| `DirectChatWindow` | Media previews, voice recording, message search, reply composer, reaction/edit/delete controls, and mobile-safe composer. |
+| `MessageBubble` | Text, image, video, audio, file rendering, reply quote, reactions, timestamps, and receipt glyphs. |
 
-## 11. Deployment Architecture
+## 13. Deployment Architecture
 
 ```text
 Docker Compose
 |-- client: Nginx serving Vite bundle on host port 3000
-|       `-- starts after healthy server
 |-- server: non-root Node.js runtime on host port 5000
 |       |-- waits for healthy MongoDB and Redis
-|       `-- publishes to external Azure Service Bus
+|       |-- mounts server-uploads volume at /app/uploads
+|       `-- uses EVENT_PUBLISHER=noop unless optional Azure is enabled
 |-- mongo: MongoDB 7 with persistent volume
 `-- redis: Redis 7 with append-only persistent volume
 ```
 
-The production Compose override requires service secrets, sets reverse-proxy awareness, and establishes container resource budgets. In managed hosting, the two application images can be deployed independently while MongoDB Atlas, Redis Cloud, and Azure Service Bus provide managed state.
+The production Compose override can bind external MongoDB/Redis if desired. The default local stack uses free local containers and local upload storage.
 
-## 12. Health and Failure Behavior
+## 14. Security and Privacy Notes
 
-| Failure | Behavior |
+| Area | Design |
 | --- | --- |
-| Invalid/expired/revoked JWT | REST returns `401`; socket handshake is rejected. |
-| Unauthorized private-room operation | REST or socket response reports authorization failure. |
-| MongoDB or Redis not ready | `/api/health` responds `503` with `status: "degraded"`. |
-| Redis operation fails during workflow | The operation fails in a controlled path; durable MongoDB records are not silently rewritten. |
-| Azure Service Bus publish fails | Saved/live message remains accepted; publication failure is reported for monitoring. |
-| Socket transport disconnects | Presence cleanup executes and active clients may reconnect/replay queued in-session sends. |
+| Credentials | Passwords hashed with bcrypt; JWT secret supplied by environment. |
+| Upload validation | MIME allowlist, size limit, executable extension rejection, and purpose-specific checks. |
+| Attachment access | Message files are available only to conversation participants. |
+| Local media privacy | Uploaded files remain on the local server filesystem or Docker volume. |
+| Browser microphone | Voice notes use browser microphone permission and never call a third-party recording API. |
+| Browser notifications | Permission is user-triggered and local to the browser. |
+| External services | None required; Azure Service Bus is optional and off by default. |
 
-## 13. Scaling Path
+## 15. Scaling Path
 
-The portfolio delivery runs one Node.js instance. Horizontal production scaling would add the Socket.io Redis adapter for cross-instance broadcasts, multiple API replicas behind a load balancer, managed MongoDB/Redis resiliency policies, Service Bus consumers with dead-letter monitoring, and metrics/tracing for queue and socket behavior.
+The portfolio delivery runs one Node.js server instance. Horizontal production scaling would add the Socket.io Redis adapter, API replicas behind a load balancer, shared object storage behind the existing storage abstraction, managed MongoDB/Redis resiliency, optional event consumers, and observability for sockets, uploads, and queue outcomes.

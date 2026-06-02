@@ -4,6 +4,7 @@
 
 const User = require('../../models/User');
 const redisService = require('../../services/redisService');
+const { registerDirectMessageHandlers } = require('./directMessageHandler');
 const { registerMessageHandlers } = require('./messageHandler');
 const { registerRoomHandlers } = require('./roomHandler');
 
@@ -21,6 +22,7 @@ const handleConnection = async (io, socket) => {
 
     registerRoomHandlers(socket);
     registerMessageHandlers(io, socket);
+    registerDirectMessageHandlers(io, socket);
 
     const presence = await redisService.setUserOnline(socket.user);
     const onlineUsers = await redisService.getOnlineUsers();
@@ -43,7 +45,9 @@ const handleConnection = async (io, socket) => {
           });
         }
       } catch (error) {
-        console.error('Socket disconnect cleanup failed:', error.message);
+        if (!/client was closed/i.test(error.message)) {
+          console.error('Socket disconnect cleanup failed:', error.message);
+        }
       }
     });
   } catch (error) {

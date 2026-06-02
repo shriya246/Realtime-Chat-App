@@ -1,6 +1,6 @@
 {
   "name": "chatterbox-client",
-  "version": "1.0.0",
+  "version": "2.5.0",
   "description": "React, Vite, TailwindCSS, and Socket.io client for ChatterBox.",
   "private": true,
   "type": "module",

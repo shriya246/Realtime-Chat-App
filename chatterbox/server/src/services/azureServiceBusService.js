@@ -1,5 +1,5 @@
 /**
- * Purpose: Publishes durable message-delivery events to Azure Service Bus and supports queue consumers.
+ * Purpose: Publishes local no-op or optional Azure Service Bus message-delivery events.
  */
 
 const { ServiceBusClient } = require('@azure/service-bus');
@@ -11,11 +11,21 @@ let sender = null;
 let receiver = null;
 
 /**
- * Returns whether Azure Service Bus delivery is configured.
+ * Returns whether Azure Service Bus delivery is enabled and configured.
  *
  * @returns {boolean} True when a connection string is provided.
  */
-const isConfigured = () => Boolean(getConfig().serviceBus.connectionString);
+const isConfigured = () => {
+  const { serviceBus } = getConfig();
+  return serviceBus.eventPublisher === 'azure' && Boolean(serviceBus.connectionString);
+};
+
+/**
+ * Returns the configured event publisher mode.
+ *
+ * @returns {string} Publisher mode.
+ */
+const getPublisherMode = () => getConfig().serviceBus.eventPublisher;
 
 /**
  * Returns the configured queue name.
@@ -54,7 +64,9 @@ const sendMessage = async (message) => {
     if (!client) {
       return {
         published: false,
-        reason: 'AZURE_SERVICE_BUS_NOT_CONFIGURED'
+        reason: getPublisherMode() === 'azure'
+          ? 'AZURE_SERVICE_BUS_NOT_CONFIGURED'
+          : 'LOCAL_NOOP_EVENT_PUBLISHER'
       };
     }
 
@@ -68,6 +80,7 @@ const sendMessage = async (message) => {
       messageId: message.id,
       subject: 'chat.message.delivered',
       applicationProperties: {
+        conversationId: message.conversationId,
         roomId: message.roomId,
         senderId: message.sender.id
       }

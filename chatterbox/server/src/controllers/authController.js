@@ -4,6 +4,7 @@
 
 const User = require('../models/User');
 const redisService = require('../services/redisService');
+const { formatUserProfile } = require('./userController');
 const { conflictError, validationError, authError } = require('../utils/errors');
 const { getTokenTtlSeconds, signToken } = require('../utils/jwt');
 
@@ -70,7 +71,7 @@ const buildAuthResponse = (user, token) => ({
   success: true,
   data: {
     token,
-    user: user.toJSON()
+    user: formatUserProfile(user)
   }
 });
 
@@ -195,7 +196,7 @@ const getMe = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: {
-        user: req.user.toJSON()
+        user: formatUserProfile(req.user)
       }
     });
   } catch (error) {

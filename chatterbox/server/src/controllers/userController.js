@@ -4,10 +4,27 @@
 
 const mongoose = require('mongoose');
 
+const Attachment = require('../models/Attachment');
 const User = require('../models/User');
 const { notFoundError, validationError } = require('../utils/errors');
 
 const DEFAULT_USER_SEARCH_LIMIT = 20;
+
+/**
+ * Formats a public profile with avatar URL when present.
+ *
+ * @param {object} user - User document.
+ * @returns {object} Safe profile payload.
+ */
+const formatUserProfile = (user) => {
+  const payload = user.toJSON();
+  const avatarId = user.avatarAttachmentId?._id || user.avatarAttachmentId;
+
+  payload.displayName = payload.displayName || '';
+  payload.about = payload.about || '';
+  payload.avatarUrl = avatarId ? `/api/attachments/${avatarId.toString()}/content` : null;
+  return payload;
+};
 
 /**
  * Searches users by username or email.
@@ -36,7 +53,7 @@ const searchUsers = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: {
-        users: users.map((user) => user.toJSON())
+        users: users.map((user) => formatUserProfile(user))
       }
     });
   } catch (error) {
@@ -69,7 +86,54 @@ const getUserById = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: {
-        user: user.toJSON()
+        user: formatUserProfile(user)
+      }
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * Updates the authenticated user's public profile.
+ *
+ * @param {object} req - Express request.
+ * @param {object} res - Express response.
+ * @param {Function} next - Express next callback.
+ * @returns {Promise<object|void>} JSON response or error handoff.
+ */
+const updateCurrentUser = async (req, res, next) => {
+  try {
+    if (req.body.avatarAttachmentId) {
+      const avatar = await Attachment.findById(req.body.avatarAttachmentId);
+
+      if (!avatar || avatar.purpose !== 'avatar' || avatar.ownerId.toString() !== req.user.id) {
+        return next(validationError('Invalid avatar attachment.', [
+          { field: 'avatarAttachmentId', message: 'Avatar must be an uploaded image owned by you.' }
+        ]));
+      }
+    }
+
+    const updates = {};
+
+    if (req.body.displayName !== undefined) {
+      updates.displayName = req.body.displayName.trim();
+    }
+
+    if (req.body.about !== undefined) {
+      updates.about = req.body.about.trim();
+    }
+
+    if (req.body.avatarAttachmentId !== undefined) {
+      updates.avatarAttachmentId = req.body.avatarAttachmentId || null;
+    }
+
+    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        user: formatUserProfile(user)
       }
     });
   } catch (error) {
@@ -78,6 +142,8 @@ const getUserById = async (req, res, next) => {
 };
 
 module.exports = {
+  formatUserProfile,
   getUserById,
-  searchUsers
+  searchUsers,
+  updateCurrentUser
 };

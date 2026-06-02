@@ -1,6 +1,8 @@
-<!-- Purpose: REST and Socket.io API contract for ChatterBox. -->
+<!-- Purpose: Legacy REST and Socket.io API contract for ChatterBox v1 room chat. See API.md for current direct/media messaging. -->
 
 # API Specification
+
+> Version 2.5.0 adds WhatsApp-style one-to-one direct conversations, media messages, voice notes, profiles, notifications, read receipts, replies, reactions, edits, deletes, and chat settings. The current API reference is maintained in [API.md](API.md). This file remains as the detailed room-chat contract for the preserved v1 room feature set.
 
 ## 1. Overview
 

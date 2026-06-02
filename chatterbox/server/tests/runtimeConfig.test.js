@@ -26,6 +26,7 @@ describe('Runtime configuration', () => {
       BCRYPT_SALT_ROUNDS: '11',
       CLIENT_URL: 'https://portfolio.example',
       COMPRESSION_THRESHOLD_BYTES: '2048',
+      EVENT_PUBLISHER: 'azure',
       JWT_EXPIRES_IN: '2h',
       JWT_SECRET: 'configured-secret',
       MESSAGE_CACHE_TTL_SECONDS: '1800',
@@ -53,6 +54,7 @@ describe('Runtime configuration', () => {
     expect(config.redis).toMatchObject({ db: 2, host: 'cache', port: 6380, tls: true });
     expect(config.cache).toMatchObject({ messageHistoryLimit: 75, messageTtlSeconds: 1800 });
     expect(config.mongo.testUri).toBe('mongodb://database/chatterbox');
+    expect(config.serviceBus.eventPublisher).toBe('azure');
     expect(config.serviceBus.queueName).toBe('delivery');
     expect(validateConfig(config)).toBe(config);
   });
@@ -64,22 +66,41 @@ describe('Runtime configuration', () => {
     process.env.PORT = '5000';
     process.env.TRUST_PROXY = 'perhaps';
     expect(() => getConfig()).toThrow('TRUST_PROXY must be either true or false');
+
+    process.env.TRUST_PROXY = 'true';
+    process.env.EVENT_PUBLISHER = 'paid-cloud';
+    expect(() => getConfig()).toThrow('EVENT_PUBLISHER must be either noop or azure');
   });
 
-  test('requires deployment-critical production secrets and endpoints', () => {
+  test('requires deployment-critical production secrets and local endpoints without paid services', () => {
     process.env.NODE_ENV = 'production';
 
     expect(() => validateConfig(getConfig())).toThrow(
-      'JWT_SECRET, MONGO_URI, CORS_ALLOWED_ORIGINS, AZURE_SERVICE_BUS_CONNECTION_STRING'
+      'JWT_SECRET, MONGO_URI, CORS_ALLOWED_ORIGINS'
     );
 
     Object.assign(process.env, {
-      AZURE_SERVICE_BUS_CONNECTION_STRING: 'Endpoint=sb://production/',
       CORS_ALLOWED_ORIGINS: 'https://chat.example',
       JWT_SECRET: 'production-secret',
       MONGO_URI: 'mongodb://production/chatterbox'
     });
 
     expect(validateConfig(getConfig()).cors.allowedOrigins).toEqual(['https://chat.example']);
+  });
+
+  test('requires Azure connection string only when the optional Azure publisher is enabled', () => {
+    Object.assign(process.env, {
+      CORS_ALLOWED_ORIGINS: 'https://chat.example',
+      EVENT_PUBLISHER: 'azure',
+      JWT_SECRET: 'production-secret',
+      MONGO_URI: 'mongodb://production/chatterbox',
+      NODE_ENV: 'production'
+    });
+
+    expect(() => validateConfig(getConfig())).toThrow('AZURE_SERVICE_BUS_CONNECTION_STRING');
+
+    process.env.AZURE_SERVICE_BUS_CONNECTION_STRING = 'Endpoint=sb://production/';
+
+    expect(validateConfig(getConfig()).serviceBus.eventPublisher).toBe('azure');
   });
 });

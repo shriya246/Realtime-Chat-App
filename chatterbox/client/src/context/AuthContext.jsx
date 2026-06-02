@@ -121,6 +121,24 @@ export const AuthProvider = ({ children }) => {
     }
   }, [clearSession, session?.token]);
 
+  /**
+   * Updates the stored user payload after profile changes.
+   *
+   * @param {object} user - Updated user profile.
+   * @returns {void}
+   */
+  const updateUser = useCallback((user) => {
+    setSession((currentSession) => {
+      if (!currentSession) {
+        return currentSession;
+      }
+
+      const nextSession = { ...currentSession, user };
+      storeSession(nextSession);
+      return nextSession;
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       isAuthenticated: Boolean(session?.token && session?.user),
@@ -129,9 +147,10 @@ export const AuthProvider = ({ children }) => {
       logout,
       register,
       token: session?.token || null,
+      updateUser,
       user: session?.user || null
     }),
-    [isLoading, login, logout, register, session]
+    [isLoading, login, logout, register, session, updateUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

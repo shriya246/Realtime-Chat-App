@@ -15,7 +15,7 @@ let unauthorizedHandler = null;
  *
  * @returns {string} API base URL.
  */
-const getApiBaseUrl = () =>
+export const getApiBaseUrl = () =>
   typeof __CHATTERBOX_API_URL__ !== 'undefined' ? __CHATTERBOX_API_URL__ : DEFAULT_API_URL;
 
 const api = axios.create({

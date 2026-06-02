@@ -26,6 +26,23 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     },
+    displayName: {
+      type: String,
+      trim: true,
+      maxlength: 60,
+      default: ''
+    },
+    about: {
+      type: String,
+      trim: true,
+      maxlength: 160,
+      default: ''
+    },
+    avatarAttachmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Attachment',
+      default: null
+    },
     passwordHash: {
       type: String,
       required: true,
@@ -56,6 +73,15 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ username: 'text', email: 'text' });
+
+/**
+ * Returns the public display name fallback used throughout the client.
+ *
+ * @returns {string} Display name or username.
+ */
+userSchema.virtual('name').get(function getName() {
+  return this.displayName || this.username;
+});
 
 /**
  * Hashes the passwordHash field before saving when it has changed.

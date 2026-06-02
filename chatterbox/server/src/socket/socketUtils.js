@@ -18,12 +18,20 @@ const toId = (value) => {
     return null;
   }
 
-  if (value.id) {
-    return value.id.toString();
+  if (typeof value === 'string') {
+    return value;
   }
 
   if (value._id) {
     return value._id.toString();
+  }
+
+  if (typeof value.toHexString === 'function') {
+    return value.toHexString();
+  }
+
+  if (value.id && typeof value.id !== 'object') {
+    return value.id.toString();
   }
 
   return value.toString();

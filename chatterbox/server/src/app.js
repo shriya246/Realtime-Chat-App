@@ -11,6 +11,8 @@ const mongoose = require('mongoose');
 const { getConfig } = require('./config');
 const redis = require('./config/redis');
 const authRoutes = require('./routes/authRoutes');
+const attachmentRoutes = require('./routes/attachmentRoutes');
+const conversationRoutes = require('./routes/conversationRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const userRoutes = require('./routes/userRoutes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -84,6 +86,8 @@ app.get('/api/health', async (_req, res, next) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/attachments', attachmentRoutes);
+app.use('/api/conversations', conversationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/rooms', roomRoutes);
 

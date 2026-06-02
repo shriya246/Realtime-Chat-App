@@ -1,20 +1,23 @@
-<!-- Purpose: Test strategy and test-case catalog for ChatterBox. -->
+<!-- Purpose: Test strategy and test-case catalog for ChatterBox v2.5.0. -->
 
 # Test Plan
 
 ## 1. Purpose
 
-This test plan defines how ChatterBox is validated across backend APIs, real-time Socket.io workflows, React components, integration behavior, runtime configuration, and deployment readiness. Final verification results were recorded in Sprint 6.
+This test plan defines how ChatterBox is validated across backend APIs, Socket.io workflows, React components, local storage behavior, runtime configuration, and deployment readiness. Version 2.5.0 extends the plan for media messages, voice notes, browser notifications, profile avatars, pinned/archived/muted chats, and conversation search while preserving v1 room chat and v2 direct messaging.
 
 ## 2. Test Objectives
 
-- Verify authentication and authorization behavior.
-- Verify data validation and safe error responses.
-- Verify room membership and message persistence rules.
-- Verify Socket.io real-time delivery, typing indicators, and presence events.
-- Verify Redis cache behavior for message history and token blacklist.
-- Verify frontend auth and chat components render correct states.
-- Verify Docker-based local deployment can start all required services.
+- Verify authentication, authorization, and safe error behavior.
+- Verify room membership, room messages, Redis cache, typing, and presence.
+- Verify direct conversation uniqueness, unread counts, read receipts, replies, reactions, edit/delete, and optimistic states.
+- Verify local media upload validation, participant-only attachment access, and media message compatibility.
+- Verify voice recorder UI behavior with browser-native `MediaRecorder` and graceful fallback.
+- Verify profile updates and avatar rendering.
+- Verify pinned, archived, and muted chat settings.
+- Verify browser notification permission UI and muted-chat suppression logic.
+- Verify message search is scoped to authorized conversations.
+- Verify Docker Compose keeps MongoDB, Redis, and uploads local.
 
 ## 3. Test Tools
 
@@ -31,101 +34,127 @@ This test plan defines how ChatterBox is validated across backend APIs, real-tim
 
 | Environment | Description |
 | --- | --- |
-| Local unit/integration | Node.js process, Jest, in-memory MongoDB, mocked or test Redis where appropriate. |
-| Local Docker | Nginx client, API server, MongoDB, and Redis through Docker Compose. |
-| Production-like | Docker Compose production override with environment-provided MongoDB, Redis, and Azure Service Bus. |
+| Local unit/integration | Node.js process, Jest, in-memory MongoDB, local/test Redis behavior, and temporary upload directory. |
+| Local Docker | Nginx client, API server, MongoDB, Redis, and `server-uploads` volume through Docker Compose. |
+| Production-like | Docker Compose production override with environment-provided MongoDB/Redis and optional Azure only if enabled. |
 
 ## 5. Coverage Goals
 
 | Area | Target |
 | --- | --- |
-| Backend statements | 80% or higher by Sprint 5. |
-| Backend auth controllers and middleware | Critical branches covered. |
-| Socket event handlers | Valid and invalid event paths covered. |
-| Frontend core chat components | Render, interaction, and error states covered. |
+| Backend statements | 80% or higher. |
+| Backend lines | 80% or higher. |
+| Auth, authorization, media, and settings | Critical success/failure paths covered. |
+| Socket handlers | Valid and invalid event paths covered. |
+| Frontend core chat components | Render, interaction, and fallback states covered. |
 
 ## 6. Test Categories
 
 | Category | Scope |
 | --- | --- |
-| Unit tests | Validators, utilities, formatting helpers, error classes. |
-| API integration tests | Auth, user, room, and message routes with database interactions. |
-| Socket integration tests | Authenticated connection, room join, message send/receive, typing indicators. |
-| Component tests | Login, registration, sidebar, chat window, and message bubble rendering. |
-| Deployment smoke tests | Container health checks and environment variable validation. |
+| API integration tests | Auth, users, attachments, conversations, settings, search, rooms, and history. |
+| Socket integration tests | Authenticated connection, room chat, direct messages, receipts, reactions, edits, deletes, and settings/profile events. |
+| Component tests | Login, sidebar, direct chat window, message bubble, profile modal, and preserved room chat. |
+| Storage tests | Allowed upload, rejected dangerous upload, and participant-only file access. |
+| Browser API tests | Notification permission UI and MediaRecorder fallback/mocked behavior. |
+| Deployment smoke tests | Container health checks, local upload volume, and environment variable validation. |
 
-## 7. Initial Test Cases
+## 7. Test Case Catalog
 
-| ID | Category | Description | Input | Expected Output | Status |
-| --- | --- | --- | --- | --- | --- |
-| AUTH-001 | API | Register with valid input. | username, email, strong password | `201`, JWT, sanitized user | Passed Sprint 2 |
-| AUTH-002 | API | Register with duplicate email. | existing email | `409` conflict response | Passed Sprint 2 |
-| AUTH-003 | API | Register with invalid email. | malformed email | `400` validation response | Passed Sprint 5 |
-| AUTH-004 | API | Login with valid credentials. | email and password | `200`, JWT, user | Passed Sprint 2 |
-| AUTH-005 | API | Login with wrong password. | email and invalid password | `401` safe auth error | Passed Sprint 2 |
-| AUTH-006 | API | Access protected route without token. | no auth header | `401` response | Passed Sprint 2 |
-| AUTH-007 | API | Access protected route with malformed token. | invalid token | `401` response | Passed Sprint 5 |
-| AUTH-008 | API | Logout blacklists token. | valid JWT | token rejected on later protected request | Passed Sprint 2 |
-| ROOM-001 | API | Create public room. | name and type | `201`, room payload | Passed Sprint 3 |
-| ROOM-002 | API | Get visible rooms. | authenticated request | list of accessible rooms | Passed Sprint 3 |
-| ROOM-003 | API | Add member to private room. | room ID and user ID | updated member list | Passed Sprint 3 |
-| ROOM-005 | API | Deny private room to non-member. | private room ID and visitor JWT | `403` authorization response | Passed Sprint 3 |
-| ROOM-004 | API | Access invalid room ID. | malformed ObjectId | `400` response | Passed Sprint 5 |
-| MSG-001 | API | Retrieve cursor-paginated message history. | room ID, limit, before cursor | chronological pages and cursor metadata | Passed Sprint 5 |
-| MSG-002 | Integration | Cache hit for recent messages. | Redis list exists | messages returned from cache | Passed Sprint 5 |
-| MSG-003 | Integration | Cache miss fallback. | empty Redis list | MongoDB query and cache warm | Passed Sprint 5 |
-| MSG-004 | Integration | Invalidate room cache after membership update. | add private member | cached room history removed | Passed Sprint 5 |
-| SOCK-001 | Socket | Connect with valid token. | JWT handshake | socket connects and user online event emits | Passed Sprint 3 |
-| SOCK-002 | Socket | Connect with invalid token. | bad JWT | connection rejected | Passed Sprint 3 |
-| SOCK-003 | Socket | Join room as member. | room ID | socket joins and history emits | Passed Sprint 3 |
-| SOCK-004 | Socket | Send valid message. | room ID and content | message persists and emits | Passed Sprint 3 |
-| SOCK-005 | Socket | Send typing indicator. | room ID and typing state | other sockets receive indicator | Passed Sprint 3 |
-| UI-001 | Frontend | Login page renders. | render route | email/password fields visible | Passed Sprint 5 |
-| UI-002 | Frontend | Login authentication errors display. | rejected login submission | readable error message | Passed Sprint 5 |
-| UI-003 | Frontend | Message bubble alignment and queued state. | own, other, queued messages | layout and delivery labels match state | Passed Sprint 5 |
-| UI-004 | Frontend | Chat window renders and sends messages. | messages and drafted input | message, typing state, and submit action work | Passed Sprint 5 |
-| UI-BUILD-001 | Frontend build | Compile React client for production. | `npm run build` | Vite emits optimized production assets | Passed Sprint 4 |
-| CFG-001 | Backend unit | Parse and validate centralized runtime configuration. | test and production environment snapshots | parsed settings and rejected missing production requirements | Passed Sprint 6 |
-| DEPLOY-001 | Deployment | Validate base and production Compose models. | `docker compose ... config --quiet` | configurations resolve without errors | Passed Sprint 6 |
-| DEPLOY-002 | Deployment | Build production images and start full stack. | `docker compose build`, `docker compose up --detach` | client, server, MongoDB, Redis healthy | Passed Sprint 6 |
-| DEPLOY-003 | Deployment | Query running service routes. | client `/`, API `/api/health` | UI HTTP `200`; API `status: "ok"` and dependencies `ready` | Passed Sprint 6 |
+| ID | Category | Description | Expected Output | Status |
+| --- | --- | --- | --- | --- |
+| AUTH-001 | API | Register with valid input. | `201`, JWT, sanitized user | Passed |
+| AUTH-002 | API | Register/login rejects invalid or duplicate credentials. | Safe `400`/`401`/`409` responses | Passed |
+| AUTH-003 | API | Logout blacklists token. | Later protected request rejected | Passed |
+| ROOM-001 | API | Create/list/access rooms. | Authorized room payloads | Passed |
+| ROOM-002 | API | Deny private room to non-member. | `403` authorization response | Passed |
+| ROOM-003 | API | Retrieve cursor-paginated room history. | Chronological page and next cursor | Passed |
+| ROOM-004 | Socket | Join room, send message, typing indicator. | Live events emitted to authorized sockets | Passed |
+| DIRECT-001 | API | Create direct conversation. | `201`, direct conversation summary | Passed v2.0.0 |
+| DIRECT-002 | API | Prevent duplicate direct conversation. | Existing conversation returned; one DB record | Passed v2.0.0 |
+| DIRECT-003 | API | List conversations. | Participant info, preview, timestamp, unread count | Passed v2.0.0 |
+| DIRECT-004 | Socket | Send direct message. | Persists and emits `direct_message:new` | Passed v2.0.0 |
+| DIRECT-005 | API/Socket | Mark messages as read. | Unread count clears; status becomes read | Passed v2.0.0 |
+| DIRECT-006 | Socket | Update reaction. | One reaction per user; aggregate broadcast | Passed v2.0.0 |
+| DIRECT-007 | Socket | Edit/delete authorization. | Non-sender rejected; sender succeeds | Passed v2.0.0 |
+| MEDIA-001 | API | Upload allowed local file. | `201`, attachment metadata, local file saved | Passed v2.5.0 |
+| MEDIA-002 | API | Reject dangerous/disallowed file. | `400` validation response | Passed v2.5.0 |
+| MEDIA-003 | API | Block attachment access for non-participant. | `403` authorization response | Passed v2.5.0 |
+| MEDIA-004 | Socket/API | Send media direct message. | Message type is image/video/file/audio and includes attachment | Passed v2.5.0 |
+| PROFILE-001 | API | Update display name, about, avatar. | Sanitized user includes avatar URL | Passed v2.5.0 |
+| SETTINGS-001 | API | Pin/archive/mute conversation. | Conversation summary includes updated settings | Passed v2.5.0 |
+| SEARCH-001 | API | Search authorized conversation. | Matching text messages returned | Passed v2.5.0 |
+| SEARCH-002 | API | Search unauthorized conversation. | `403` authorization response | Passed v2.5.0 |
+| UI-001 | Frontend | Login page renders and shows auth errors. | Email/password fields and readable error | Passed |
+| UI-002 | Frontend | Conversation list renders. | Avatar, preview, timestamp, unread badge | Passed v2.0.0 |
+| UI-003 | Frontend | Direct chat opens and optimistic sending state renders. | Header/messages and sending indicator | Passed v2.0.0 |
+| UI-004 | Frontend | Reply preview and reaction UI. | Reply target and reaction handler invoked | Passed v2.0.0 |
+| UI-005 | Frontend | Attachment picker preview and media upload. | Preview displayed; upload helper and send invoked | Passed v2.5.0 |
+| UI-006 | Frontend | Voice recorder fallback/mocked behavior. | Fallback message when `MediaRecorder` unavailable | Passed v2.5.0 |
+| UI-007 | Frontend | Notification permission control. | Permission callback invoked from sidebar | Passed v2.5.0 |
+| UI-008 | Frontend | Profile avatar rendering and save. | Avatar image shown; save payload includes file | Passed v2.5.0 |
+| UI-009 | Frontend | Pinned/muted/archive behavior. | Settings callbacks and archived grouping work | Passed v2.5.0 |
+| UI-010 | Frontend | Room chat remains accessible. | Existing room components still pass | Passed |
+| BUILD-001 | Frontend build | Compile React client for production. | Vite emits optimized assets | Required each release |
+| DEPLOY-001 | Deployment | Validate Docker Compose model. | Config resolves without errors | Required each release |
+| DEPLOY-002 | Deployment | Start full local stack. | Client, server, MongoDB, Redis healthy | Required each release |
 
 ## 8. Test Data Strategy
 
 - Use unique emails and usernames per test.
 - Use deterministic room names for integration tests.
 - Use isolated MongoDB databases for test runs.
-- Use short JWT lifetimes in expired-token tests.
-- Clear Redis keys between tests that touch cache or presence.
+- Use temporary local upload directories in media tests.
+- Clear MongoDB collections, Redis state, and test uploads between tests.
+- Use small Buffer payloads for upload tests to avoid large repository artifacts.
 
-## 9. Exit Criteria
+## 9. Acceptance Verification Commands
 
-Testing is acceptable for the final portfolio release when:
+```bash
+cd server
+npm test -- --runInBand
 
-- All required Jest suites pass locally.
-- Backend coverage is 80% or higher.
-- Critical auth and socket failure paths are covered.
-- No unhandled promise rejections occur during tests.
-- Docker health checks pass in the final compose setup.
+cd ../client
+npm test -- --watchAll=false
+npm run build
+```
 
-## 10. Final Coverage and Verification Summary
+Optional Docker smoke:
 
-| Suite | Result | Coverage status |
-| --- | --- | --- |
-| Server Jest/Supertest/Socket.io/config tests | 34 tests passed across 7 suites | 80.82% statements and 80.53% lines; enforced at 80% global threshold |
-| Client React Testing Library tests | 8 tests passed across 3 suites | Core login, message bubble, and chat window behaviors verified |
-| Client Vite production build | Build passed | Optimized Nginx-ready static assets generated |
-| Docker deployment smoke test | Four containers healthy | Client HTTP `200`; API reports MongoDB and Redis `ready` |
+```bash
+docker compose config --quiet
+docker compose up --build --detach
+```
 
-The server coverage run includes auth, users, rooms, cursor-based message history, cache behavior, sockets, Mongo connection retry, Azure Service Bus behavior, and production configuration validation. Frontend hook and provider coverage can expand as offline delivery workflows mature.
+Then verify:
 
-Full dependency audits for both `server/` and `client/` reported zero vulnerabilities during Sprint 5 verification; Sprint 6 did not change package dependencies.
+- `http://localhost:3000` loads.
+- `http://localhost:5000/api/health` returns `status: "ok"`.
+- Register/login works.
+- User search starts a direct chat.
+- Text, image/file/video/audio, and voice note sends work.
+- Read receipts, reply, reaction, edit, delete, search, pin/archive/mute, and notifications work.
+- Rooms remain accessible from the Rooms tab.
+
+## 10. Current Verification Summary
+
+Latest local verification during v2.5.0 implementation:
+
+| Suite | Result |
+| --- | --- |
+| Server Jest/Supertest/Socket.io/config tests | 49 tests passed across 9 suites, 81.75% statements and 81.65% lines |
+| Client React Testing Library tests | 19 tests passed across 6 suites |
+
+Client production build and Docker smoke should be rerun after documentation/version updates before final release tagging.
 
 ## 11. Risks and Mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| Flaky socket timing tests | Use explicit acknowledgements, promises, and deterministic timeouts. |
-| External Azure dependency instability | Mock Service Bus in automated tests and run manual integration with real credentials. |
-| Redis state leaking between tests | Prefix test keys and flush/purge only test-owned keys. |
-| Frontend tests coupled to styling | Assert semantic UI behavior first and styling classes only for important layout distinctions. |
+| Upload path traversal or unsafe file types | Sanitize names, generate stored filenames, reject dangerous extensions/MIME types, and hide absolute paths. |
+| Unauthorized media download | Authorize every attachment content request against conversation membership. |
+| Browser API variability | Provide Notification permission checks and MediaRecorder fallback UI. |
+| Flaky socket timing tests | Use acknowledgements, promises, and deterministic timeouts. |
+| Redis state leaking between tests | Clear test-owned cache/presence state. |
+| Frontend tests coupled to styling | Assert semantic UI behavior and accessible controls first. |
+| Optional Azure dependency instability | Keep no-op default and mock/skip external queues in automated tests. |
