@@ -4,18 +4,24 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+import AdminDashboardPanel from '../components/AdminDashboardPanel';
+import CallOverlay from '../components/CallOverlay';
+import ChannelsPanel from '../components/ChannelsPanel';
 import ChatWindow from '../components/ChatWindow';
 import CreateRoomModal from '../components/CreateRoomModal';
 import DirectChatWindow from '../components/DirectChatWindow';
 import GroupDetailsModal from '../components/GroupDetailsModal';
 import PrivacySettingsModal from '../components/PrivacySettingsModal';
 import ProfileModal from '../components/ProfileModal';
+import SessionManagementModal from '../components/SessionManagementModal';
 import Sidebar from '../components/Sidebar';
+import StatusPanel from '../components/StatusPanel';
 import { useAuth } from '../context/AuthContext';
 import useDirectMessages from '../hooks/useDirectMessages';
 import useMessages from '../hooks/useMessages';
 import useOnlineUsers from '../hooks/useOnlineUsers';
 import useSocket from '../hooks/useSocket';
+import useWebRtcCall from '../hooks/useWebRtcCall';
 import api, { getApiErrorMessage } from '../services/api';
 
 /**
@@ -44,6 +50,10 @@ const ChatPage = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   const [isGroupDetailsOpen, setIsGroupDetailsOpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [isChannelsOpen, setIsChannelsOpen] = useState(false);
+  const [isSessionsOpen, setIsSessionsOpen] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
@@ -73,6 +83,7 @@ const ChatPage = () => {
     );
   }, []);
   const directMessageState = useDirectMessages(selectedConversation, upsertConversation);
+  const callState = useWebRtcCall(socket);
 
   /**
    * Fetches rooms currently visible to the authenticated user.
@@ -433,6 +444,10 @@ const ChatPage = () => {
         onLogout={logout}
         onOpenProfile={() => setIsProfileOpen(true)}
         onOpenPrivacy={() => setIsPrivacyOpen(true)}
+        onOpenStatus={() => setIsStatusOpen(true)}
+        onOpenChannels={() => setIsChannelsOpen(true)}
+        onOpenSessions={() => setIsSessionsOpen(true)}
+        onOpenDashboard={() => setIsDashboardOpen(true)}
         onRequestNotifications={handleRequestNotifications}
         onSearchUsers={handleSearchUsers}
         onSelectConversation={(conversation) => {
@@ -472,6 +487,8 @@ const ChatPage = () => {
           onBlockUser={handleBlockUser}
           onLockChat={() => handleUpdateConversationSettings(selectedConversation, { locked: true })}
           onReport={handleReport}
+          onStartVideoCall={(conversation) => callState.startCall(conversation, 'video')}
+          onStartVoiceCall={(conversation) => callState.startCall(conversation, 'audio')}
           onToggleDisappearing={handleToggleDisappearing}
           onToggleEncryption={handleToggleEncryption}
           onUnlockChat={handleUnlockConversation}
@@ -524,6 +541,24 @@ const ChatPage = () => {
         onSave={handleSaveGroup}
         room={selectedRoom}
       />
+      <StatusPanel
+        currentUser={user}
+        isOpen={isStatusOpen}
+        onClose={() => setIsStatusOpen(false)}
+      />
+      <ChannelsPanel
+        isOpen={isChannelsOpen}
+        onClose={() => setIsChannelsOpen(false)}
+      />
+      <SessionManagementModal
+        isOpen={isSessionsOpen}
+        onClose={() => setIsSessionsOpen(false)}
+      />
+      <AdminDashboardPanel
+        isOpen={isDashboardOpen}
+        onClose={() => setIsDashboardOpen(false)}
+      />
+      <CallOverlay {...callState} />
     </div>
   );
 };

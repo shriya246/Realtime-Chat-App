@@ -4,7 +4,7 @@
 
 **A production-oriented real-time chat application built by Shriya Patel.**
 
-ChatterBox v3.0.0 is a WhatsApp-style full-stack messaging app with authenticated room chat, one-to-one direct messages, media attachments, voice notes, browser notifications, profile avatars, privacy controls, group management, disappearing messages, locked chats, block/report flows, a browser-native encryption demo, MongoDB persistence, Redis presence/cache, optional event publishing, Docker Compose, and CI-ready tests.
+ChatterBox v4.0.0 is a WhatsApp-style full-stack messaging app with authenticated room chat, one-to-one direct messages, media attachments, voice notes, browser notifications, WebRTC 1:1 voice/video calls, statuses/stories, channels/broadcasts, session management, privacy controls, group management, disappearing messages, locked chats, block/report flows, a browser-native encryption demo, MongoDB persistence, Redis presence/cache, optional scaling hooks, Docker Compose, and CI-ready tests.
 
 ![React](https://img.shields.io/badge/React-18-149eca?logo=react&logoColor=white)
 ![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white)
@@ -13,7 +13,7 @@ ChatterBox v3.0.0 is a WhatsApp-style full-stack messaging app with authenticate
 ![Socket.io](https://img.shields.io/badge/Socket.io-Real--Time-010101?logo=socketdotio&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-## v3.0.0 Features
+## v4.0.0 Features
 
 - Registration, login, logout, JWT auth, bcrypt password hashing, protected routes, rate limits, validation, Helmet, and CORS allowlists
 - Public/private rooms with owner/admin/member roles, group details, group settings, invite links, join approval, member add/remove, admin promote/demote, leave, and owner delete
@@ -25,6 +25,12 @@ ChatterBox v3.0.0 is a WhatsApp-style full-stack messaging app with authenticate
 - Local secure uploads with allowed MIME validation, file-size limits, executable rejection, and participant-only attachment access
 - Browser-native voice notes with `MediaRecorder`, recording timer, cancel/preview/send flow, and audio playback bubbles
 - Browser-native notifications with user-triggered permission request and muted-chat respect
+- Browser-native WebRTC 1:1 voice and video calls using Socket.io signaling, incoming call modal, mute/camera controls, duration, end call, and missed-call messages
+- Status/stories with text, image, and video support, 24-hour expiry, viewers, and local cleanup
+- Channels/broadcasts with owner/admin posting, followers, discovery/search, simple posts, and reactions
+- Multi-device/session foundation with session records, user-agent tracking, logout current session, and logout all other sessions
+- Local admin observability dashboard with total users, active users, total messages, messages per day, active conversations, open reports, and health status
+- Optional Redis Socket.io adapter hook and Compose `scale` profile for local multi-instance experiments
 - User profile editing with `displayName`, `about`, local avatar upload, chat-list/header/message avatar rendering, and initials fallback
 - Pinned chats at the top, archived chats in a separate section, and muted chats that suppress notifications
 - Conversation-scoped message search using MongoDB-backed scoped queries
@@ -35,9 +41,9 @@ ChatterBox v3.0.0 is a WhatsApp-style full-stack messaging app with authenticate
 - Basic client-side encryption demo for direct chats using browser Web Crypto, localStorage demo key storage, and ciphertext-only server persistence for encrypted messages
 - Local no-op event publisher by default; optional Azure Service Bus only when explicitly enabled with user-owned credentials
 - Docker Compose for client, server, MongoDB, Redis, and local upload volume
-- Backend and frontend tests for v1, v2.0, v2.5, and v3.0 behavior
+- Backend, frontend, and optional Playwright E2E tests for v1, v2.0, v2.5, v3.0, and v4.0 behavior
 
-All v3.0.0 features use free, local, open-source, or browser-native resources. No Cloudinary, Firebase, S3, Twilio, SendGrid, Pusher, paid push provider, paid moderation API, paid identity service, or paid storage service is required.
+All v4.0.0 features use free, local, open-source, or browser-native resources. No Cloudinary, Firebase, S3, Twilio, SendGrid, Pusher, paid call/media provider, paid monitoring service, paid moderation API, paid identity service, or paid storage service is required.
 
 ## Architecture
 
@@ -117,6 +123,7 @@ npm test -- --runInBand
 cd ../client
 npm test -- --watchAll=false
 npm run build
+npm run test:e2e # optional; requires local app running and Playwright browsers installed
 ```
 
 The backend enforces at least 80% global statement and line coverage. CI installs from lockfiles, runs backend tests, frontend tests, frontend build, and Docker image builds.
@@ -138,8 +145,16 @@ All protected routes require `Authorization: Bearer <jwt>`.
 | `PATCH` | `/api/users/me/privacy` | Yes | Update app-level privacy settings |
 | `POST` | `/api/users/:id/block` | Yes | Block a user from direct messaging you |
 | `DELETE` | `/api/users/:id/block` | Yes | Unblock a user |
+| `GET` | `/api/sessions` | Yes | List active browser sessions |
+| `DELETE` | `/api/sessions/all` | Yes | Logout all other sessions |
 | `POST` | `/api/attachments?purpose=&conversationId=` | Yes | Upload local avatar or message attachment |
 | `GET` | `/api/attachments/:id/content` | Yes | Serve authorized local attachment bytes |
+| `GET` | `/api/statuses` | Yes | List active 24-hour statuses |
+| `POST` | `/api/statuses` | Yes | Create text/image/video status |
+| `GET` | `/api/channels?search=` | Yes | Discover channels |
+| `POST` | `/api/channels` | Yes | Create channel |
+| `POST` | `/api/channels/:id/posts` | Yes | Create admin-only channel post |
+| `GET` | `/api/admin/dashboard` | Admin | Local observability dashboard metrics |
 | `POST` | `/api/conversations/direct` | Yes | Create/get one-to-one conversation |
 | `GET` | `/api/conversations?search=` | Yes | List conversations with unread counts and settings |
 | `GET` | `/api/conversations/:id/messages` | Yes | Cursor-paginated direct-message history |
@@ -180,6 +195,7 @@ The socket handshake supplies `auth: { token: "<jwt>" }`.
 | Client -> Server | `conversation:disappearing:update`, `conversation:encryption:update` | Update direct-chat disappearing or encryption demo mode |
 | Client -> Server | `profile:update` | Broadcast profile metadata changes |
 | Client -> Server | `group:update`, `group:member:add`, `group:member:remove`, `group:admin:update`, `group:join_request:resolved` | Manage group info, members, admins, and join requests |
+| Client -> Server | `call:offer`, `call:answer`, `call:ice-candidate`, `call:ringing`, `call:accepted`, `call:rejected`, `call:ended`, `call:missed` | WebRTC 1:1 call signaling |
 | Client -> Server | `user:block`, `report:create`, `chat:locked` | Privacy and moderation updates |
 | Server -> Client | `message:expired` | Notify clients that a disappearing message expired |
 | Server -> Client | `conversation:updated` | Refresh previews and unread counts |
@@ -205,7 +221,7 @@ Notifications use only the browser Notification API. The UI asks for permission 
 
 ## Privacy and Security
 
-Version 3.0.0 adds app-level privacy controls, locked chats, block/report storage, disappearing messages, and a basic client-side encryption demo. Locked chats are web-app-level privacy, not device biometric security. The encryption demo uses browser Web Crypto and stores symmetric demo keys in `localStorage`; it is not production-grade E2EE, does not implement Signal protocol, and does not provide secure multi-device key exchange.
+Version 4.0.0 keeps the v3 privacy controls and adds WebRTC calling, statuses, channels, sessions, scaling hooks, and local dashboard metrics. Locked chats are web-app-level privacy, not device biometric security. The encryption demo uses browser Web Crypto and stores symmetric demo keys in `localStorage`; it is not production-grade E2EE, does not implement Signal protocol, and does not provide secure multi-device key exchange.
 
 See [docs/PRIVACY_AND_SECURITY.md](docs/PRIVACY_AND_SECURITY.md) for the full limitations and threat-model notes.
 
@@ -255,14 +271,15 @@ chatterbox/
 
 ## Known Limitations
 
-- The delivered topology runs one Node.js server instance; multi-instance Socket.io fan-out would need the Socket.io Redis adapter.
-- Media storage is local filesystem storage. The code is abstracted for future Azure Blob/S3-style adapters, but no cloud storage is required or configured in v3.0.0.
+- The default topology runs one Node.js server instance; v4 includes an optional Redis Socket.io adapter hook and Compose scale profile, but real production scaling still needs load balancing and sticky sessions.
+- WebRTC calls are 1:1 peer-to-peer for localhost/LAN demos. Production NAT traversal usually needs properly operated TURN infrastructure.
+- Media storage is local filesystem storage. The code is abstracted for future Azure Blob/S3-style adapters, but no cloud storage is required or configured in v4.0.0.
 - Browser notifications are local browser notifications while the app is open; web push service workers are outside this release.
 - Voice-note duration and media dimensions are stored when available from the client/runtime; deep media probing is intentionally avoided to keep dependencies local and light.
 
 ## Documentation
 
-[SRS](docs/SRS.md) | [Architecture](docs/ARCHITECTURE.md) | [API](docs/API.md) | [Room API](docs/API_SPEC.md) | [Schema](docs/DB_SCHEMA.md) | [Test Plan](docs/TEST_PLAN.md) | [Deployment](docs/DEPLOYMENT.md) | [Privacy and Security](docs/PRIVACY_AND_SECURITY.md) | [Sprint Log](docs/SPRINT_LOG.md)
+[SRS](docs/SRS.md) | [Architecture](docs/ARCHITECTURE.md) | [API](docs/API.md) | [Room API](docs/API_SPEC.md) | [Schema](docs/DB_SCHEMA.md) | [Test Plan](docs/TEST_PLAN.md) | [Deployment](docs/DEPLOYMENT.md) | [Privacy and Security](docs/PRIVACY_AND_SECURITY.md) | [WebRTC Calls](docs/WEBRTC_CALLS.md) | [Scaling](docs/SCALING.md) | [E2E Testing](docs/E2E_TESTING.md) | [Sprint Log](docs/SPRINT_LOG.md)
 
 ## License
 

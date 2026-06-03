@@ -2,7 +2,7 @@
 
 # API Specification
 
-> Version 3.0.0 keeps this preserved room-chat contract and adds managed groups, privacy settings, disappearing messages, locked chats, local reports, and an encryption demo. The current full API reference is maintained in [API.md](API.md).
+> Version 4.0.0 keeps this preserved room-chat contract and adds WebRTC calls, statuses, channels, sessions, scaling hooks, dashboard metrics, managed groups, privacy settings, disappearing messages, locked chats, local reports, and an encryption demo. The current full API reference is maintained in [API.md](API.md).
 
 ## 1. Overview
 

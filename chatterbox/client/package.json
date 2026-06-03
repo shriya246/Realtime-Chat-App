@@ -1,6 +1,6 @@
 {
   "name": "chatterbox-client",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "React, Vite, TailwindCSS, and Socket.io client for ChatterBox.",
   "private": true,
   "type": "module",
@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
     "test": "jest --watchAll=false",
+    "test:e2e": "playwright test",
     "test:watch": "jest --watch"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
   "devDependencies": {
     "@babel/preset-env": "^7.24.4",
     "@babel/preset-react": "^7.24.1",
+    "@playwright/test": "^1.60.0",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^14.2.1",
     "@testing-library/user-event": "^14.5.2",
@@ -38,6 +40,9 @@
   },
   "jest": {
     "testEnvironment": "jsdom",
+    "testPathIgnorePatterns": [
+      "<rootDir>/e2e/"
+    ],
     "setupFilesAfterEnv": [
       "<rootDir>/src/setupTests.js"
     ],

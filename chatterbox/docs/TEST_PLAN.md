@@ -6,6 +6,8 @@
 
 This test plan defines how ChatterBox is validated across backend APIs, Socket.io workflows, React components, local storage behavior, runtime configuration, and deployment readiness. Version 3.0.0 extends the plan for group management, invite/join approval, disappearing messages, block/report flows, locked chats, privacy settings, and the client-side encryption demo while preserving v1 room chat, v2 direct messaging, and v2.5 media/profile features.
 
+Version 4.0.0 adds validation for WebRTC call signaling, statuses/stories, channels, session management, Redis Socket.io adapter fallback, admin dashboard metrics, and optional Playwright E2E flows.
+
 ## 2. Test Objectives
 
 - Verify authentication, authorization, and safe error behavior.
@@ -100,6 +102,12 @@ This test plan defines how ChatterBox is validated across backend APIs, Socket.i
 | REPORT-001 | API | Store local report and list as admin. | Report persisted; non-admin cannot list | Passed v3.0.0 |
 | LOCK-001 | API | Locked chat PIN/password flow. | History blocked until unlock succeeds | Passed v3.0.0 |
 | ENCRYPT-001 | Socket/API | Encrypted direct message stores ciphertext. | DB content is ciphertext with metadata | Passed v3.0.0 |
+| CALL-001 | Socket | Authorize and forward 1:1 call offer. | Participant receives `call:offer`; outsider rejected | Passed v4.0.0 |
+| STATUS-001 | API/Worker | Create status and hide expired statuses. | Active status listed; expired cleanup removes old record | Passed v4.0.0 |
+| CHANNEL-001 | API | Create/follow/post/react channel. | Admin post succeeds; follower post rejected; reaction stored | Passed v4.0.0 |
+| SESSION-001 | API | Logout all other sessions. | Only current session remains active | Passed v4.0.0 |
+| SCALE-001 | Config | Redis adapter fallback. | Startup/config does not break if optional adapter is absent | Passed v4.0.0 |
+| DASH-001 | API | Dashboard authorization. | Non-admin rejected; admin receives metrics | Passed v4.0.0 |
 | UI-001 | Frontend | Login page renders and shows auth errors. | Email/password fields and readable error | Passed |
 | UI-002 | Frontend | Conversation list renders. | Avatar, preview, timestamp, unread badge | Passed v2.0.0 |
 | UI-003 | Frontend | Direct chat opens and optimistic sending state renders. | Header/messages and sending indicator | Passed v2.0.0 |
@@ -116,6 +124,14 @@ This test plan defines how ChatterBox is validated across backend APIs, Socket.i
 | UI-014 | Frontend | Locked chat unlock UI. | Messages hidden until unlock callback is used | Passed v3.0.0 |
 | UI-015 | Frontend | Encrypted conversation warning/state. | Demo warning appears and ciphertext send path is used | Passed v3.0.0 |
 | UI-016 | Frontend | Privacy settings modal. | Visibility/read-receipt payload saved | Passed v3.0.0 |
+| UI-017 | Frontend | Call modal UI. | Incoming and active call controls render and invoke callbacks | Passed v4.0.0 |
+| UI-018 | Frontend | Status tray/viewer. | Status list and create flow render | Passed v4.0.0 |
+| UI-019 | Frontend | Channel list/detail. | Channel post flow invokes API | Passed v4.0.0 |
+| UI-020 | Frontend | Session management page. | Active sessions render and logout-all invokes API | Passed v4.0.0 |
+| UI-021 | Frontend | Admin dashboard page. | Metrics cards and chart rows render | Passed v4.0.0 |
+| E2E-001 | Playwright | Register/login. | New account reaches chat app | Added v4.0.0 |
+| E2E-002 | Playwright | Start direct chat and send message. | Sent message visible | Added v4.0.0 |
+| E2E-003 | Playwright | Create group room. | New room visible | Added v4.0.0 |
 | BUILD-001 | Frontend build | Compile React client for production. | Vite emits optimized assets | Required each release |
 | DEPLOY-001 | Deployment | Validate Docker Compose model. | Config resolves without errors | Required each release |
 | DEPLOY-002 | Deployment | Start full local stack. | Client, server, MongoDB, Redis healthy | Required each release |
@@ -164,9 +180,10 @@ Latest local verification during v3.0.0 implementation:
 
 | Suite | Result |
 | --- | --- |
-| Server Jest/Supertest/Socket.io/config tests | 61 tests passed across 10 suites, 80.59% statements and 80.25% lines |
-| Client React Testing Library tests | 25 tests passed across 8 suites |
+| Server Jest/Supertest/Socket.io/config tests | 68 tests passed across 11 suites, 80.58% statements and 80.31% lines |
+| Client React Testing Library tests | 30 tests passed across 9 suites |
 | Client production build | Passed with Vite optimized bundle |
+| Playwright E2E discovery | 3 specs listed with `npm run test:e2e -- --list` |
 
 Client production build and Docker smoke should be rerun after documentation/version updates before final release tagging.
 

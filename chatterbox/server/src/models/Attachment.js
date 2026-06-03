@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
 const ATTACHMENT_KINDS = ['image', 'video', 'audio', 'file', 'avatar'];
-const ATTACHMENT_PURPOSES = ['message', 'avatar'];
+const ATTACHMENT_PURPOSES = ['message', 'avatar', 'status'];
 
 const attachmentSchema = new Schema(
   {

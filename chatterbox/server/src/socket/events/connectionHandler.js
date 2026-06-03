@@ -4,6 +4,7 @@
 
 const User = require('../../models/User');
 const redisService = require('../../services/redisService');
+const { registerCallHandlers } = require('./callHandler');
 const { registerDirectMessageHandlers } = require('./directMessageHandler');
 const { registerMessageHandlers } = require('./messageHandler');
 const { registerRoomHandlers } = require('./roomHandler');
@@ -23,6 +24,7 @@ const handleConnection = async (io, socket) => {
     registerRoomHandlers(io, socket);
     registerMessageHandlers(io, socket);
     registerDirectMessageHandlers(io, socket);
+    registerCallHandlers(io, socket);
 
     const presence = await redisService.setUserOnline(socket.user);
     const onlineUsers = await redisService.getOnlineUsers();

@@ -4,6 +4,7 @@
 
 const User = require('../models/User');
 const redisService = require('../services/redisService');
+const { touchSession } = require('../services/sessionService');
 const { authError } = require('../utils/errors');
 const { verifyToken } = require('../utils/jwt');
 
@@ -64,6 +65,11 @@ const authenticate = async (req, _res, next) => {
     req.user = user;
     req.token = token;
     req.tokenPayload = decodedToken;
+    req.sessionRecord = await touchSession(decodedToken);
+
+    if (decodedToken.sid && !req.sessionRecord) {
+      return next(authError('Authentication session has been revoked or expired.'));
+    }
 
     return next();
   } catch (error) {

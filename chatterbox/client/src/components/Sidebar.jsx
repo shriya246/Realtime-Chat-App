@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import clsx from 'clsx';
-import { Archive, Bell, BellOff, DoorOpen, Hash, LockKeyhole, MessageCircle, Pin, Plus, Search, UserRound, Users, VolumeX, X } from 'lucide-react';
+import { Activity, Archive, Bell, BellOff, CircleDot, DoorOpen, Hash, LockKeyhole, MessageCircle, MonitorSmartphone, Pin, Plus, Radio, Search, UserRound, Users, VolumeX, X } from 'lucide-react';
 
 import OnlineIndicator from './OnlineIndicator';
 import { formatMessageTime } from '../utils/formatTime';
@@ -40,8 +40,12 @@ const Sidebar = ({
   onCloseMobile,
   onCreateRoom,
   onLogout,
+  onOpenChannels = () => undefined,
+  onOpenDashboard = () => undefined,
   onOpenProfile = () => undefined,
   onOpenPrivacy = () => undefined,
+  onOpenSessions = () => undefined,
+  onOpenStatus = () => undefined,
   onRequestNotifications = () => undefined,
   onSearchUsers = () => undefined,
   onSelectConversation = () => undefined,
@@ -167,7 +171,7 @@ const Sidebar = ({
       <header className="flex h-16 items-center justify-between border-b border-stroke px-4">
         <div>
           <h1 className="text-lg font-semibold text-ink">ChatterBox</h1>
-          <p className="text-xs text-muted">v3.0 privacy controls</p>
+          <p className="text-xs text-muted">v4.0 calls and channels</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -207,6 +211,20 @@ const Sidebar = ({
           >
             <Hash className="h-4 w-4" />
             Rooms
+          </button>
+        </div>
+        <div className="mt-2 grid grid-cols-4 gap-1">
+          <button aria-label="Open status" className="icon-button h-9 w-full" onClick={onOpenStatus} type="button">
+            <CircleDot className="h-4 w-4" />
+          </button>
+          <button aria-label="Open channels" className="icon-button h-9 w-full" onClick={onOpenChannels} type="button">
+            <Radio className="h-4 w-4" />
+          </button>
+          <button aria-label="Open sessions" className="icon-button h-9 w-full" onClick={onOpenSessions} type="button">
+            <MonitorSmartphone className="h-4 w-4" />
+          </button>
+          <button aria-label="Open admin dashboard" className="icon-button h-9 w-full" onClick={onOpenDashboard} type="button">
+            <Activity className="h-4 w-4" />
           </button>
         </div>
         <div className="relative mt-3">

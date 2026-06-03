@@ -46,9 +46,9 @@ const uploadAttachment = async (req, res, next) => {
       }
 
       await getAccessibleConversation(metadata.conversationId, req.user.id);
-    } else if (metadata.purpose !== 'avatar') {
+    } else if (metadata.purpose !== 'avatar' && metadata.purpose !== 'status') {
       return next(validationError('Invalid upload purpose.', [
-        { field: 'purpose', message: 'Upload purpose must be message or avatar.' }
+        { field: 'purpose', message: 'Upload purpose must be message, avatar, or status.' }
       ]));
     }
 
@@ -84,6 +84,10 @@ const uploadAttachment = async (req, res, next) => {
  */
 const authorizeAttachmentAccess = async (attachment, userId) => {
   if (attachment.purpose === 'avatar') {
+    return;
+  }
+
+  if (attachment.purpose === 'status' && attachment.ownerId.toString() === userId) {
     return;
   }
 

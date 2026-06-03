@@ -6,6 +6,8 @@
 
 ChatterBox is a container-ready real-time chat system. The React single-page app is built by Vite and served by Nginx. REST and Socket.io traffic reaches a Node.js/Express server that owns authentication, authorization, direct conversations, group management, messages, disappearing-message cleanup, local media storage, privacy settings, moderation reports, browser-notification decisions, profile updates, Redis-backed presence/cache, and optional event publication.
 
+Version 4.0.0 extends this with browser-native WebRTC 1:1 calls, status/story records, channels/broadcasts, browser session management, optional Redis Socket.io adapter configuration, local background workers, and an internal admin dashboard. No paid call, media, push, storage, monitoring, identity, or moderation service is required.
+
 MongoDB is durable truth. Redis stores transient state. Local filesystem storage stores uploads in development and Docker Compose. Event publishing defaults to a local no-op publisher. Azure Service Bus is optional and disabled unless `EVENT_PUBLISHER=azure` is explicitly configured.
 
 ## 2. Component Diagram

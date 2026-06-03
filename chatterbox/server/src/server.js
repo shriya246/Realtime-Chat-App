@@ -10,9 +10,9 @@ const { connectDB, disconnectDB } = require('./config/db');
 const { closeRedis, connectRedis } = require('./config/redis');
 const { closeServiceBus } = require('./services/azureServiceBusService');
 const {
-  startDisappearingMessageCleanup,
-  stopDisappearingMessageCleanup
-} = require('./services/disappearingMessageService');
+  startBackgroundWorkers,
+  stopBackgroundWorkers
+} = require('./services/backgroundWorkerService');
 const { closeSocketServer, initializeSocketServer } = require('./socket/socketManager');
 
 const config = validateConfig(getConfig());
@@ -29,7 +29,7 @@ const startServer = async () => {
   try {
     await connectDB();
     await connectRedis();
-    startDisappearingMessageCleanup(io);
+    startBackgroundWorkers(io);
 
     server.listen(port, () => {
       console.info(`ChatterBox server listening on port ${port}.`);
@@ -58,7 +58,7 @@ const shutdown = async (signal) => {
     }, config.server.shutdownTimeoutMs);
 
     await closeSocketServer(io);
-    stopDisappearingMessageCleanup();
+    stopBackgroundWorkers();
     await closeServiceBus();
     await disconnectDB();
     await closeRedis();

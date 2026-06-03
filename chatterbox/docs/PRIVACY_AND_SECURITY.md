@@ -16,6 +16,12 @@ ChatterBox v3.0.0 adds privacy controls, managed groups, block/report flows, dis
 
 No external SMS, email, push, identity, moderation, scheduler, storage, or encryption service is required.
 
+v4.0.0 adds WebRTC calls, statuses, channels, session management, scaling hooks, and local dashboard metrics. These also avoid paid APIs: calls use browser WebRTC and Socket.io signaling, statuses/channels use MongoDB/local uploads, sessions use local JWT-backed records, and dashboard metrics use MongoDB/Redis data.
+
+WebRTC privacy note: 1:1 media flows peer-to-peer where the browser/network permits it. Production NAT traversal commonly requires TURN infrastructure; TURN hosting is not bundled or required for the local demo.
+
+Session privacy note: user-agent and IP-style metadata are stored only to help the signed-in user identify active sessions. This is a session-management foundation, not full WhatsApp-style secure multi-device E2EE.
+
 ## Privacy Controls
 
 User privacy settings are stored on the user document:

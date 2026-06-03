@@ -8,6 +8,14 @@ ChatterBox stores durable data in MongoDB with Mongoose schemas. Redis stores tr
 
 Version 3.0.0 preserves v1 room chat, v2 direct messaging, and v2.5 media/profile features while adding group roles, invite/join approval state, disappearing messages, block/report records, locked-chat settings, privacy settings, and a basic client-side encryption demo.
 
+Version 4.0.0 adds:
+
+- `statuses` for 24-hour text/image/video stories with viewers and privacy.
+- `channels` for owner/admin broadcast channels, followers, posts, and reactions.
+- `sessions` for JWT-backed browser/device session tracking and logout-all flows.
+- WebRTC call signaling remains transient Socket.io state; missed calls are stored as system messages.
+- Dashboard metrics are derived from existing MongoDB collections and Redis health state.
+
 ## 2. Common Conventions
 
 - Primary identifiers use MongoDB ObjectId values.

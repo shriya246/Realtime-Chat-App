@@ -27,14 +27,19 @@ const getJwtSecret = () => {
  * Signs a JWT for a user.
  *
  * @param {object} user - Mongoose user document or plain user object.
+ * @param {string|null} sessionId - Optional session identifier.
  * @returns {string} Signed JWT.
  */
-const signToken = (user) => {
+const signToken = (user, sessionId = null) => {
   const payload = {
     sub: user.id || user._id.toString(),
     username: user.username,
     email: user.email
   };
+
+  if (sessionId) {
+    payload.sid = sessionId;
+  }
 
   return jwt.sign(payload, getJwtSecret(), { expiresIn: getConfig().jwt.expiresIn });
 };

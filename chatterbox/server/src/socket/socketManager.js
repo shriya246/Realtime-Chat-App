@@ -7,6 +7,8 @@ const { Server } = require('socket.io');
 const { getConfig } = require('../config');
 const User = require('../models/User');
 const redisService = require('../services/redisService');
+const { touchSession } = require('../services/sessionService');
+const { configureSocketAdapter } = require('../services/socketAdapterService');
 const { verifyToken } = require('../utils/jwt');
 const { handleConnection } = require('./events/connectionHandler');
 
@@ -64,6 +66,14 @@ const authenticateSocket = async (socket, next) => {
 
     socket.user = user;
     socket.token = token;
+    socket.sessionRecord = await touchSession(decodedToken);
+
+    if (decodedToken.sid && !socket.sessionRecord) {
+      const error = new Error('Authentication session has been revoked or expired.');
+      error.data = { code: 'AUTHENTICATION_ERROR' };
+      return next(error);
+    }
+
     return next();
   } catch (error) {
     return next(error);
@@ -84,6 +94,7 @@ const initializeSocketServer = (httpServer) => {
     }
   });
 
+  configureSocketAdapter(io);
   io.use(authenticateSocket);
 
   io.on('connection', (socket) => {

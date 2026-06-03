@@ -4,6 +4,22 @@
 
 All protected REST endpoints require `Authorization: Bearer <jwt>`. Socket.io clients authenticate with `auth: { token }`.
 
+## v4.0.0 Additions
+
+| Area | Endpoints / Events |
+| --- | --- |
+| WebRTC calls | Socket events `call:offer`, `call:answer`, `call:ice-candidate`, `call:ringing`, `call:accepted`, `call:rejected`, `call:ended`, `call:missed` |
+| Status/stories | `GET /api/statuses`, `POST /api/statuses`, `POST /api/statuses/:id/view`, `DELETE /api/statuses/:id` |
+| Channels | `GET /api/channels`, `POST /api/channels`, `GET /api/channels/:id`, `POST /api/channels/:id/follow`, `DELETE /api/channels/:id/follow`, `POST /api/channels/:id/posts`, `POST /api/channels/:id/posts/:postId/reactions` |
+| Sessions | `GET /api/sessions`, `DELETE /api/sessions/:id`, `DELETE /api/sessions/all` |
+| Admin dashboard | `GET /api/admin/dashboard`, `GET /api/admin/metrics` |
+
+Call signaling is Socket.io-only. Each payload includes `conversationId`; the server verifies direct-conversation membership before forwarding to `user:<recipientId>`.
+
+Status uploads use the existing local attachment endpoint with `purpose=status`. Status records expire after 24 hours and are cleaned up by a local worker.
+
+Channel posts are admin-only. Followers can follow/unfollow and react to posts with the supported emoji set.
+
 ## Auth and Users
 
 | Method | Endpoint | Purpose |

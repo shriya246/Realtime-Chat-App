@@ -26,6 +26,8 @@ The base Compose file starts the client, server, MongoDB, Redis, and a named loc
 
 No Cloudinary, Firebase Storage, S3 bucket, Twilio, SendGrid, Pusher, paid push provider, paid moderation API, paid identity provider, paid scheduler, or paid recording service is needed.
 
+v4.0.0 also avoids paid call/media and monitoring services. WebRTC calls use browser APIs and Socket.io signaling. The admin dashboard uses local MongoDB/Redis data. Optional E2E tests use open-source Playwright.
+
 ## 3. Local Docker Quickstart
 
 From the project root:
@@ -158,13 +160,23 @@ The storage code is behind `storageService`, so future Azure Blob or S3 adapters
 | --- | --- | --- |
 | Notifications | Browser Notification API | Permission is requested from the UI only; muted chats suppress notifications. |
 | Voice notes | Browser `MediaRecorder` and microphone permission | Records audio locally in the browser and uploads it as an audio attachment. |
+| WebRTC calls | Browser `getUserMedia`, `RTCPeerConnection`, Socket.io | 1:1 peer-to-peer calls for localhost/LAN demos. |
 | Media preview | Browser file/object URL support | Shows selected image/audio/video/file previews before send. |
 | Encryption demo | Browser Web Crypto and localStorage | Encrypts direct-message text in the browser for demo conversations; stores demo keys locally. |
 | Locked chats | Account password or local PIN | PIN hash is stored with bcrypt; unlock state is short-lived and per user. |
 | Disappearing messages | Server process interval | Local cleanup worker soft-deletes expired messages and emits `message:expired`. |
 | Reports | MongoDB | Reports are stored locally and visible only to admin users. |
+| Status cleanup | Server process interval | Expired 24-hour statuses are deleted locally. |
 
 No server-side push provider or media transcription/processing API is required.
+
+Optional scaling experiment:
+
+```bash
+SOCKET_IO_REDIS_ADAPTER=true docker compose --profile scale up --build
+```
+
+The default local stack remains one API instance. Real production scaling still needs a reverse proxy/load balancer and sticky sessions.
 
 ## 8. Production Compose Deployment
 

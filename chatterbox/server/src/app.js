@@ -12,9 +12,13 @@ const { getConfig } = require('./config');
 const redis = require('./config/redis');
 const authRoutes = require('./routes/authRoutes');
 const attachmentRoutes = require('./routes/attachmentRoutes');
+const channelRoutes = require('./routes/channelRoutes');
 const conversationRoutes = require('./routes/conversationRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const roomRoutes = require('./routes/roomRoutes');
+const sessionRoutes = require('./routes/sessionRoutes');
+const statusRoutes = require('./routes/statusRoutes');
 const userRoutes = require('./routes/userRoutes');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { createRequestLogger } = require('./middleware/requestLogger');
@@ -88,10 +92,14 @@ app.get('/api/health', async (_req, res, next) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/attachments', attachmentRoutes);
+app.use('/api/channels', channelRoutes);
 app.use('/api/conversations', conversationRoutes);
+app.use('/api/admin', dashboardRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/sessions', sessionRoutes);
+app.use('/api/statuses', statusRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

@@ -1,6 +1,6 @@
 {
   "name": "chatterbox-server",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "Node.js, Express, MongoDB, Redis, Socket.io, and Azure Service Bus backend for ChatterBox.",
   "main": "src/server.js",
   "type": "commonjs",

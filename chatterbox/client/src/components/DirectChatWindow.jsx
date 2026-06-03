@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, Ban, Flag, LockKeyhole, Mic, Paperclip, Search, SendHorizontal, Shield, Square, Timer, X } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Ban, Flag, LockKeyhole, Mic, Paperclip, Phone, Search, SendHorizontal, Shield, Square, Timer, Video, X } from 'lucide-react';
 
 import MessageBubble from './MessageBubble';
 import { encryptDemoMessage, ensureDemoKey } from '../services/encryptionDemo';
@@ -26,6 +26,8 @@ const DirectChatWindow = ({
   onBlockUser = () => undefined,
   onLockChat = () => undefined,
   onReport = () => undefined,
+  onStartVideoCall = () => undefined,
+  onStartVoiceCall = () => undefined,
   onToggleDisappearing = () => undefined,
   onToggleEncryption = () => undefined,
   onUnlockChat = async () => false,
@@ -285,6 +287,12 @@ const DirectChatWindow = ({
         <span className="hidden rounded-md border border-stroke bg-panel px-2.5 py-1 text-xs text-muted sm:inline-flex">
           {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Offline'}
         </span>
+        <button aria-label="Start voice call" className="icon-button hidden sm:inline-flex" onClick={() => onStartVoiceCall(conversation)} type="button">
+          <Phone className="h-4 w-4" />
+        </button>
+        <button aria-label="Start video call" className="icon-button hidden sm:inline-flex" onClick={() => onStartVideoCall(conversation)} type="button">
+          <Video className="h-4 w-4" />
+        </button>
         <button
           aria-label={conversation.encryptedModeEnabled ? 'Disable encrypted demo' : 'Enable encrypted demo'}
           className="icon-button hidden sm:inline-flex"

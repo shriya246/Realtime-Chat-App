@@ -2,11 +2,14 @@
  * Purpose: Implements authentication workflows for register, login, logout, and current-user lookup.
  */
 
+const crypto = require('crypto');
+
 const User = require('../models/User');
 const redisService = require('../services/redisService');
+const { createSessionRecord, revokeSession } = require('../services/sessionService');
 const { formatUserProfile } = require('./userController');
 const { conflictError, validationError, authError } = require('../utils/errors');
-const { getTokenTtlSeconds, signToken } = require('../utils/jwt');
+const { getTokenTtlSeconds, signToken, verifyToken } = require('../utils/jwt');
 
 const MIN_PASSWORD_LENGTH = 8;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -67,9 +70,10 @@ const validateLoginPayload = (payload) => {
  * @param {string} token - Signed JWT.
  * @returns {object} Auth response payload.
  */
-const buildAuthResponse = (user, token) => ({
+const buildAuthResponse = (user, token, session = null) => ({
   success: true,
   data: {
+    session: session?.toJSON ? session.toJSON() : session,
     token,
     user: formatUserProfile(user)
   }
@@ -113,9 +117,12 @@ const register = async (req, res, next) => {
       passwordHash: password
     });
 
-    const token = signToken(user);
+    const sessionId = crypto.randomUUID();
+    const token = signToken(user, sessionId);
+    const decodedToken = verifyToken(token);
+    const session = await createSessionRecord({ decodedToken, req, token, userId: user._id });
 
-    return res.status(201).json(buildAuthResponse(user, token));
+    return res.status(201).json(buildAuthResponse(user, token, session));
   } catch (error) {
     return next(error);
   }
@@ -151,9 +158,12 @@ const login = async (req, res, next) => {
       return next(authError('Invalid email or password.'));
     }
 
-    const token = signToken(user);
+    const sessionId = crypto.randomUUID();
+    const token = signToken(user, sessionId);
+    const decodedToken = verifyToken(token);
+    const session = await createSessionRecord({ decodedToken, req, token, userId: user._id });
 
-    return res.status(200).json(buildAuthResponse(user, token));
+    return res.status(200).json(buildAuthResponse(user, token, session));
   } catch (error) {
     return next(error);
   }
@@ -171,6 +181,9 @@ const logout = async (req, res, next) => {
   try {
     const ttlSeconds = getTokenTtlSeconds(req.tokenPayload);
     await redisService.blacklistToken(req.token, ttlSeconds);
+    if (req.tokenPayload.sid) {
+      await revokeSession(req.tokenPayload.sid, req.user._id);
+    }
 
     return res.status(200).json({
       success: true,

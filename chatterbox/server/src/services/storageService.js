@@ -122,6 +122,12 @@ const validateUpload = ({ buffer, mimeType, originalFilename, purpose }) => {
       { field: 'mimeType', message: 'Avatar uploads must be image files.' }
     ]);
   }
+
+  if (purpose === 'status' && !mimeType.startsWith('image/') && !mimeType.startsWith('video/')) {
+    throw validationError('Status media must be an image or video.', [
+      { field: 'mimeType', message: 'Status uploads must be image or video files.' }
+    ]);
+  }
 };
 
 /**

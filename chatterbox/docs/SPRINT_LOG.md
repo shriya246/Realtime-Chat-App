@@ -8,9 +8,9 @@
 | --- | --- |
 | Developer | Shriya Patel |
 | Product | ChatterBox - real-time portfolio chat application |
-| Delivery period | Six v1 sprints completed on 2026-05-24 and 2026-05-25; v2.0 direct messaging and v2.5 media/profile upgrades completed on 2026-05-31; v3.0 privacy/group upgrade completed on 2026-06-02 |
-| Delivered system | React/Nginx client, Node.js API and Socket.io engine, direct conversations, managed groups, local media uploads, voice notes, notifications, profiles, privacy settings, locked chats, disappearing messages, local reports, MongoDB persistence, Redis cache/presence, local no-op event publishing with optional Azure, Docker deployment, and CI |
-| Verification | 61 backend tests, 25 frontend tests, production build, and Docker smoke support |
+| Delivery period | Six v1 sprints completed on 2026-05-24 and 2026-05-25; v2.0 direct messaging and v2.5 media/profile upgrades completed on 2026-05-31; v3.0 privacy/group and v4.0 calls/status/channels upgrades completed on 2026-06-02 |
+| Delivered system | React/Nginx client, Node.js API and Socket.io engine, direct conversations, managed groups, WebRTC 1:1 calls, statuses, channels, local media uploads, voice notes, notifications, profiles, privacy settings, session management, locked chats, disappearing messages, local reports, admin dashboard, MongoDB persistence, Redis cache/presence, local no-op event publishing with optional Azure, Docker deployment, and CI |
+| Verification | 68 backend tests, 30 frontend tests, production build, and Docker Compose config validation |
 
 ### Key Engineering Decisions
 
@@ -70,6 +70,42 @@
 - Disappearing-message cleanup runs in the Node server process. A multi-instance deployment would need coordinated scheduling or idempotent worker ownership.
 - Locked chats protect the app UI/history endpoint after logout/relock, but do not defend against a compromised active browser session.
 - Encryption demo keys live in `localStorage`, so this is intentionally not production E2EE.
+
+## Sprint 10 - v4.0.0 Calls, Status, Channels, Scaling, and E2E
+
+| Field | Detail |
+| --- | --- |
+| Date | 2026-06-02 |
+| Goal | Upgrade ChatterBox to v4.0.0 with WebRTC calls, status/stories, channels, session management, scaling improvements, observability dashboard, and E2E tests. |
+| Process phase | Backend implementation, frontend implementation, testing, documentation, and versioning |
+| Status | Completed |
+
+### Deliverables Completed
+
+- Set server and client package versions to `4.0.0`.
+- Added Socket.io WebRTC signaling for 1:1 voice/video calls with offer, answer, ICE, ringing, accepted, rejected, ended, and missed states.
+- Added direct chat call buttons and browser-native call overlay with incoming call, active call, mute, camera toggle, and end call controls.
+- Added status/stories model and API for text/image/video statuses with 24-hour expiry, viewers, and local cleanup.
+- Added channels/broadcasts with owner/admin posting, followers, discovery/search, posts, and emoji reactions.
+- Added session records for browser/device foundation with active session listing and logout-all-other-sessions support.
+- Added optional Redis Socket.io adapter configuration plus Docker Compose `scale` profile for local scaling experiments.
+- Added local background worker module for disappearing-message and status cleanup.
+- Added internal admin dashboard and Prometheus-compatible local metrics endpoint.
+- Added optional Playwright E2E specs for register/login, direct chat message, and group creation.
+
+### Decisions Made
+
+- Use browser-native WebRTC and Socket.io signaling only; no Twilio, Agora, Daily, Vonage, Firebase, or paid call provider.
+- Keep v4 calls 1:1 only and document group calls as a future SFU integration area.
+- Keep observability local with MongoDB aggregations, Redis health, and optional text metrics instead of paid monitoring.
+- Keep E2E tests optional in CI because browser installation and full-stack startup increase runtime.
+
+### Verification
+
+- Backend tests cover call signaling authorization, status creation/expiry, channel create/follow/post, session logout-all, Redis adapter fallback, and dashboard authorization.
+- Frontend tests cover call modal UI, status panel, channel panel, session management modal, and admin dashboard panel.
+- Playwright specs exist for three reliable local flows and are documented in `docs/E2E_TESTING.md`.
+- Latest local results: 68 backend tests passed across 11 suites with coverage above the 80% threshold; 30 frontend tests passed across 9 suites; client production build, server syntax check, and Docker Compose config validation passed.
 
 ## Sprint 8 - v2.5.0 Media Messaging, Profiles, and Chat Controls
 
